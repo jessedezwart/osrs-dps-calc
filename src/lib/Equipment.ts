@@ -42,6 +42,49 @@ export const noStatExceptions = [
 ];
 
 /**
+ * Whether the item is worth offering to the user, e.g. in the equipment search or the gear optimizer.
+ * Excludes items with no stats (barring exceptions), broken/locked variants, and minigame-only copies.
+ */
+export const isSelectableEquipment = (eq: EquipmentPiece): boolean => !((
+  Object.values(eq.bonuses).every((val) => val === 0)
+    && Object.values(eq.offensive).every((val) => val === 0)
+    && Object.values(eq.defensive).every((val) => val === 0)
+    && (eq.speed === 4 || eq.speed <= 0)
+    && !noStatExceptions.includes(eq.name)
+)
+  || eq.version.match(/^(Broken|Inactive|Locked)$/)
+  || eq.name.match(/\((Last Man Standing|historical|beta)\)$/)
+  || eq.name.match(/(Fine mesh net|Wilderness champion amulet|\(Wilderness Wars)/)
+  || eq.name.match(/^Crystal .* \(i\)$/));
+
+export const DART_TIER: Record<string, number> = {
+  'Bronze dart': 0,
+  'Iron dart': 1,
+  'Steel dart': 2,
+  'Black dart': 3,
+  'Mithril dart': 4,
+  'Adamant dart': 5,
+  'Rune dart': 6,
+  'Amethyst dart': 7,
+  'Dragon dart': 8,
+};
+
+export const MAX_DART_TIER_BY_BLOWPIPE: Record<string, number> = {
+  'Camphor blowpipe': DART_TIER['Mithril dart'],
+  'Ironwood blowpipe': DART_TIER['Adamant dart'],
+  'Rosewood blowpipe': DART_TIER['Rune dart'],
+};
+
+/**
+ * Whether the given dart can be loaded into the given blowpipe.
+ */
+export const canBlowpipeUseDart = (blowpipeName: string, dartName: string): boolean => {
+  const maxTier = MAX_DART_TIER_BY_BLOWPIPE[blowpipeName];
+  const dartTier = DART_TIER[dartName];
+  return maxTier === undefined || dartTier === undefined || dartTier <= maxTier;
+};
+
+/**
  * A map of base item ID -> variant item IDs for items that are identical in function. This includes
  * "locked" variants of items, broken/degraded variants of armour and weapons, and cosmetic recolours of equipment.
  * @see https://oldschool.runescape.wiki/w/Trouver_parchment

@@ -47,6 +47,17 @@ import {
   Prayer,
 } from './enums/Prayer';
 import Potion from './enums/Potion';
+import { BankItem } from './lib/BankImport';
+import { OptimizedLoadout } from './lib/GearOptimizer';
+
+export interface BankData {
+  items: BankItem[];
+  fileName: string;
+  importedAt: number;
+}
+
+const BANK_STORAGE_KEY = 'dps-calc-bank';
+const EXCLUDED_ITEMS_STORAGE_KEY = 'dps-calc-excluded-items';
 
 const EMPTY_CALC_LOADOUT = {} as CalculatedLoadout;
 
@@ -212,6 +223,18 @@ class GlobalState implements State {
   ];
 
   selectedLoadout = 0;
+
+  /**
+   * The user's imported bank, used by the gear optimizer. Stored separately from the importable data so that it is
+   * never included in share links.
+   */
+  bank: BankData | null = null;
+
+  /**
+   * Item IDs (canonical) that the gear optimizer should never use. Kept separately from the bank, so that the list
+   * survives re-importing an updated bank.
+   */
+  excludedItemIds: number[] = [];
 
   ui: UI = {
     showPreferencesModal: false,
@@ -543,6 +566,69 @@ class GlobalState implements State {
       console.error(e);
       // TODO maybe some handling here
     });
+  }
+
+  loadBank() {
+    localforage.getItem(BANK_STORAGE_KEY).then((v) => {
+      if (v) this.bank = v as BankData;
+    }).catch((e) => {
+      console.error(e);
+    });
+    localforage.getItem(EXCLUDED_ITEMS_STORAGE_KEY).then((v) => {
+      if (Array.isArray(v)) this.excludedItemIds = v as number[];
+    }).catch((e) => {
+      console.error(e);
+    });
+  }
+
+  setExcludedItemIds(ids: number[]) {
+    this.excludedItemIds = [...new Set(ids)];
+    localforage.setItem(EXCLUDED_ITEMS_STORAGE_KEY, toJS(this.excludedItemIds)).catch((e) => {
+      console.error(e);
+    });
+  }
+
+  toggleExcludedItem(id: number) {
+    this.setExcludedItemIds(this.excludedItemIds.includes(id)
+      ? this.excludedItemIds.filter((i) => i !== id)
+      : [...this.excludedItemIds, id]);
+  }
+
+  setBank(items: BankItem[], fileName: string) {
+    this.bank = { items, fileName, importedAt: Date.now() };
+    localforage.setItem(BANK_STORAGE_KEY, toJS(this.bank)).catch((e) => {
+      console.error(e);
+    });
+  }
+
+  clearBank() {
+    this.bank = null;
+    localforage.removeItem(BANK_STORAGE_KEY).catch((e) => {
+      console.error(e);
+    });
+  }
+
+  /**
+   * Applies a loadout found by the gear optimizer, replacing all equipment, the combat style, spell and prayers.
+   * @param result the optimizer result
+   * @param asNewLoadout whether to create a new loadout for it (if possible), rather than overwriting the current one
+   */
+  applyOptimizedLoadout(result: OptimizedLoadout, asNewLoadout: boolean) {
+    if (asNewLoadout && this.canCreateLoadout) {
+      this.createLoadout(true, this.selectedLoadout);
+    }
+
+    // Clear everything first, so that no properties (such as blowpipe darts) are merged in from the old items
+    this.updatePlayer({ equipment: generateInitialEquipment() });
+    this.updatePlayer({
+      equipment: result.equipment,
+      style: result.style,
+      spell: result.spell,
+    });
+
+    // Piety, Rigour and Augury are also defensive prayers, so clear both groups to avoid conflicts
+    const prayers = this.player.prayers.filter((p) => !OFFENSIVE_PRAYERS.includes(p) && !DEFENSIVE_PRAYERS.includes(p));
+    this.player.prayers = [...prayers, ...result.prayers];
   }
 
   async fetchCurrentPlayerSkills() {

@@ -15,6 +15,7 @@ import { ttkDist } from '@/worker/ttkWorker';
 import { range } from 'd3-array';
 import { DeferredPromise, WORKER_JSON_REPLACER, WORKER_JSON_REVIVER } from '@/utils';
 import { NUMBER_OF_LOADOUTS } from '@/lib/constants';
+import { optimizeGear } from '@/lib/GearOptimizer';
 
 const computePvMValues: Handler<WorkerRequestType.COMPUTE_BASIC> = async (data) => {
   const { loadouts, monster, calcOpts } = data;
@@ -103,6 +104,19 @@ const compare: Handler<WorkerRequestType.COMPARE> = async (data) => {
     },
     domainMax,
   };
+};
+
+const optimize: Handler<WorkerRequestType.OPTIMIZE_GEAR> = async (data) => {
+  const {
+    owned, player, monster, opts,
+  } = data;
+
+  const start = self.performance.now();
+  const result = optimizeGear(owned, player, monster, opts);
+  const end = self.performance.now();
+  console.debug(`Gear optimization of ${owned.length} items took ${end - start}ms (${result.evaluations} evaluations)`);
+
+  return result;
 };
 
 // workers that compute a single ttk dist and then terminate
@@ -240,6 +254,11 @@ self.onmessage = async (evt: MessageEvent<string>) => {
 
       case WorkerRequestType.COMPUTE_TTK_PARALLEL: {
         res.payload = await ttkDistParallel(data, req);
+        break;
+      }
+
+      case WorkerRequestType.OPTIMIZE_GEAR: {
+        res.payload = await optimize(data, req);
         break;
       }
 

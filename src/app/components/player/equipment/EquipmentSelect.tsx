@@ -7,10 +7,11 @@ import LazyImage from '@/app/components/generic/LazyImage';
 import { cross } from 'd3-array';
 import {
   availableEquipment,
+  canBlowpipeUseDart,
   CORRUPTED_GAUNTLET_EQUIPMENT_IDS,
   equipmentAliases,
   GAUNTLET_EQUIPMENT_IDS,
-  noStatExceptions,
+  isSelectableEquipment,
 } from '@/lib/Equipment';
 import { BLOWPIPE_IDS, GAUNTLET_MONSTER_IDS, CORRUPTED_GAUNTLET_MONSTER_IDS } from '@/lib/constants';
 import Combobox from '../../generic/Combobox';
@@ -41,24 +42,6 @@ const DARTS: EquipmentPiece[] = [
   findDart('Dragon dart'),
   findDart('Amethyst dart'),
 ].filter(isDefined);
-
-const DART_TIER: Record<string, number> = {
-  'Bronze dart': 0,
-  'Iron dart': 1,
-  'Steel dart': 2,
-  'Black dart': 3,
-  'Mithril dart': 4,
-  'Adamant dart': 5,
-  'Rune dart': 6,
-  'Amethyst dart': 7,
-  'Dragon dart': 8,
-};
-
-const MAX_DART_TIER_BY_BLOWPIPE: Record<string, number> = {
-  'Camphor blowpipe': DART_TIER['Mithril dart'],
-  'Ironwood blowpipe': DART_TIER['Adamant dart'],
-  'Rosewood blowpipe': DART_TIER['Rune dart'],
-};
 
 const gauntletSort = (items: EquipmentOption[], monsterId: number) => {
   // If the selected NPC is in The Gauntlet prioritize Gauntlet Equipment
@@ -111,20 +94,7 @@ const EquipmentSelect: React.FC<IEquipmentSelectProps> = observer((props) => {
       if (customAvailableEquipmentFilter) {
         return customAvailableEquipmentFilter(eq);
       }
-      return !((
-        (Object.values(eq.bonuses)
-          .every((val) => val === 0))
-            && (Object.values(eq.offensive)
-              .every((val) => val === 0))
-            && (Object.values(eq.defensive)
-              .every((val) => val === 0))
-            && (eq.speed === 4 || eq.speed <= 0)
-            && !noStatExceptions.includes(eq.name)
-      )
-          || eq.version.match(/^(Broken|Inactive|Locked)$/)
-          || eq.name.match(/\((Last Man Standing|historical|beta)\)$/)
-          || eq.name.match(/(Fine mesh net|Wilderness champion amulet|\(Wilderness Wars)/)
-          || eq.name.match(/^Crystal .* \(i\)$/));
+      return isSelectableEquipment(eq);
     })) {
       const e: EquipmentOption = {
         label: `${v.name}`,
@@ -142,21 +112,7 @@ const EquipmentSelect: React.FC<IEquipmentSelectProps> = observer((props) => {
     }
 
     cross(blowpipeEntries, DARTS)
-      .filter(([blowpipe, dart]) => {
-        const maxTier = MAX_DART_TIER_BY_BLOWPIPE[blowpipe.label];
-
-        if (maxTier === undefined) {
-          return true;
-        }
-
-        const dartTier = DART_TIER[dart.name];
-
-        if (dartTier === undefined) {
-          return true;
-        }
-
-        return dartTier <= maxTier;
-      })
+      .filter(([blowpipe, dart]) => canBlowpipeUseDart(blowpipe.label, dart.name))
       .forEach(([blowpipe, dart]) => {
         entries.push({
           ...blowpipe,

@@ -13,6 +13,7 @@ import { IReactionPublic, reaction, toJS } from 'mobx';
 import InitialLoad from '@/app/components/InitialLoad';
 import LoadoutComparison from '@/app/components/results/LoadoutComparison';
 import TtkComparison from '@/app/components/results/TtkComparison';
+import GearOptimizer from '@/app/components/results/GearOptimizer';
 import ShareModal from '@/app/components/ShareModal';
 import DebugPanels from '@/app/components/results/DebugPanels';
 import { IconAlertTriangle } from '@tabler/icons-react';
@@ -61,6 +62,7 @@ const Home: NextPage = observer(() => {
   useEffect(() => {
     // Load preferences from browser storage if there are any
     store.loadPreferences();
+    store.loadBank();
 
     // Setup global event handling
     document.addEventListener('keydown', globalKeyDownHandler);
@@ -120,7 +122,10 @@ const Home: NextPage = observer(() => {
       </div>
       {/* Additional graphs and stuff */}
       <div className="max-w-[1420px] mx-auto mb-8">
-        {/* LoadoutComparison requires its own calc context */}
+        {/* GearOptimizer and LoadoutComparison each require their own calc context, so they don't block the main calc */}
+        <CalcProvider>
+          <GearOptimizer />
+        </CalcProvider>
         <CalcProvider>
           <LoadoutComparison />
         </CalcProvider>

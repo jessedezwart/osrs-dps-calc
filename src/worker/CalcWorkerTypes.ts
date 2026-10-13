@@ -1,10 +1,11 @@
-import { Player } from '@/types/Player';
+import { EquipmentPiece, Player } from '@/types/Player';
 import { Monster } from '@/types/Monster';
 import { NPCVsPlayerCalculatedLoadout, PlayerVsNPCCalculatedLoadout } from '@/types/State';
 import { CalcOpts } from '@/lib/BaseCalc';
 import {
   CompareResult, CompareXAxis, CompareYAxis,
 } from '@/lib/Comparator';
+import { OptimizerOpts, OptimizerResult } from '@/lib/GearOptimizer';
 
 /**
  * Requests
@@ -16,6 +17,7 @@ export enum WorkerRequestType {
   COMPUTE_TTK_PARALLEL,
   COMPUTE_TTK,
   COMPARE,
+  OPTIMIZE_GEAR,
 }
 
 export interface WorkerRequest<T extends WorkerRequestType> {
@@ -68,12 +70,22 @@ export interface TtkRequestParallel extends WorkerRequest<WorkerRequestType.COMP
   data: TtkRequest['data']
 }
 
+export interface OptimizeGearRequest extends WorkerRequest<WorkerRequestType.OPTIMIZE_GEAR> {
+  data: {
+    owned: EquipmentPiece[],
+    player: Player,
+    monster: Monster,
+    opts: OptimizerOpts,
+  },
+}
+
 export type CalcRequestsUnion =
   ComputeBasicRequest |
   ComputeReverseRequest |
   CompareRequest |
   TtkRequest |
-  TtkRequestParallel;
+  TtkRequestParallel |
+  OptimizeGearRequest;
 
 /**
  * Responses
@@ -106,12 +118,17 @@ export interface TtkResponseParallel extends WorkerResponse<WorkerRequestType.CO
   payload: TtkResponse['payload'],
 }
 
+export interface OptimizeGearResponse extends WorkerResponse<WorkerRequestType.OPTIMIZE_GEAR> {
+  payload: OptimizerResult,
+}
+
 export type CalcResponsesUnion =
   ComputeBasicResponse |
   ComputeReverseResponse |
   CompareResponse |
   TtkResponse |
-  TtkResponseParallel;
+  TtkResponseParallel |
+  OptimizeGearResponse;
 export type CalcResponse<T extends WorkerRequestType> = CalcResponsesUnion & { type: T };
 
 export type Handler<T extends WorkerRequestType> = (data: Extract<CalcRequestsUnion, { type: T }>['data'], rawRequest: CalcRequestsUnion) => Promise<CalcResponse<T>['payload']>;
