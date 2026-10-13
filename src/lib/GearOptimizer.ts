@@ -54,6 +54,8 @@ export interface OptimizerOpts {
   locked?: Partial<PlayerEquipment>;
   /** Only use attack stances that train this skill. If not set, any stance may be used. */
   training?: TrainingSkill;
+  /** Names of spells that should never be used (e.g. because their runes are too expensive). */
+  excludedSpells?: string[];
 }
 
 export interface OptimizedLoadout {
@@ -612,9 +614,12 @@ export class GearOptimizer {
       head: null, cape: null, neck: null, ammo: null, weapon: null, body: null, shield: null, legs: null, hands: null, feet: null, ring: null,
     };
 
+    const excluded = this.opts.excludedSpells || [];
+    const allowed = spells.filter((s) => !excluded.includes(s.name));
+
     const seen = new Set<string>();
     const scored: [Spell, number][] = [];
-    for (const spell of spells) {
+    for (const spell of allowed) {
       if (seen.has(spell.name)) continue;
       seen.add(spell.name);
       scored.push([spell, this.score({ equipment: empty, style: manualCast, spell }).dps]);
@@ -625,7 +630,7 @@ export class GearOptimizer {
       .sort(([, a], [, b]) => b - a)
       .slice(0, SPELLS_TO_CONSIDER)
       .map(([s]) => s);
-    const specific = spells.filter((s) => WEAPON_SPECIFIC_SPELLS.includes(s.name) && !best.includes(s));
+    const specific = allowed.filter((s) => WEAPON_SPECIFIC_SPELLS.includes(s.name) && !best.includes(s));
     return [...best, ...specific];
   }
 

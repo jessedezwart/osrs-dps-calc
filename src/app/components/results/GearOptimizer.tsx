@@ -29,7 +29,8 @@ import {
   OPTIMIZER_STYLES, OptimizedLoadout, OptimizerResult, OptimizerStyle, TrainingSkill,
 } from '@/lib/GearOptimizer';
 import { EquipmentPiece, PlayerEquipment } from '@/types/Player';
-import { getCdnImage, isDefined } from '@/utils';
+import { getCdnImage, getWikiImage, isDefined } from '@/utils';
+import { spells } from '@/types/Spell';
 
 const DISPLAY_SLOTS: (keyof PlayerEquipment)[] = [
   'head', 'cape', 'neck', 'ammo', 'weapon', 'body', 'shield', 'legs', 'hands', 'feet', 'ring',
@@ -72,8 +73,7 @@ const weaponLabel = (l: OptimizedLoadout) => {
 
 const attackLabel = (l: OptimizedLoadout) => {
   const parts = [`${l.style.name} (${l.style.stance})`];
-  if (l.spell) parts.push(l.spell.name);
-  else if (l.style.type === 'ranged' && l.equipment.ammo) parts.push(l.equipment.ammo.name);
+  if (l.style.type === 'ranged' && l.equipment.ammo) parts.push(l.equipment.ammo.name);
   return parts.join(' · ');
 };
 
@@ -85,7 +85,25 @@ const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateL
       <td className="px-2 py-1 text-gray-500 dark:text-gray-300">{rank}</td>
       <td className="px-2 py-1">
         <div className="font-bold">{weaponLabel(loadout)}</div>
-        <div className="text-xs text-gray-500 dark:text-gray-300">{attackLabel(loadout)}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-300 flex flex-wrap items-center gap-x-1">
+          {attackLabel(loadout)}
+          {loadout.spell && (
+            <>
+              {' · '}
+              <span>{loadout.spell.name}</span>
+              <button
+                type="button"
+                className="hover:text-red transition-colors"
+                onClick={() => store.toggleExcludedSpell(loadout.spell!.name)}
+                aria-label={`Exclude ${loadout.spell.name}`}
+                data-tooltip-id="tooltip"
+                data-tooltip-content={`Exclude ${loadout.spell.name} from future searches`}
+              >
+                <IconX size={12} />
+              </button>
+            </>
+          )}
+        </div>
       </td>
       <td className="px-2 py-1">
         <div className="flex flex-wrap gap-0.5">
@@ -230,6 +248,91 @@ const ExcludedItems: React.FC<{ owned: EquipmentPiece[] }> = observer(({ owned }
   );
 });
 
+/**
+ * Lets the user pick spells that the search should never use, e.g. because their runes are too expensive.
+ */
+const ExcludedSpells: React.FC = observer(() => {
+  const store = useStore();
+  const { excludedSpells } = store;
+
+  const allSpells = useMemo(
+    () => [...new Map(spells.map((sp) => [sp.name, sp])).values()].sort((a, b) => a.name.localeCompare(b.name)),
+    [],
+  );
+  const options = useMemo(() => allSpells
+    .filter((sp) => !excludedSpells.includes(sp.name))
+    .map((sp) => ({
+      label: sp.name, version: sp.spellbook, value: sp.name, spell: sp,
+    })), [allSpells, excludedSpells]);
+  const excluded = excludedSpells.map((name) => allSpells.find((sp) => sp.name === name)).filter(isDefined);
+
+  return (
+    <div className="my-3">
+      <div className="font-bold mb-1">Excluded spells</div>
+      <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
+        Spells the search will never cast, e.g. ones whose runes are too expensive. You can also click the × next to a
+        spell in the results. Powered staves (like the Warped sceptre) use their own built-in spell and aren&apos;t affected.
+      </p>
+      <div className="max-w-sm">
+        <Combobox
+          id="gear-optimizer-exclude-spell"
+          items={options}
+          placeholder="Search spells to exclude..."
+          resetAfterSelect
+          onSelectedItemChange={(i) => {
+            if (i) store.toggleExcludedSpell(i.value);
+          }}
+          CustomItemComponent={({ item }) => (
+            <div className="flex items-center gap-2">
+              <div className="basis-4 flex justify-center h-[20px] w-auto">
+                {item.spell.image && <LazyImage responsive src={getWikiImage(item.spell.image)} alt="" />}
+              </div>
+              <div>
+                {item.label}
+                <span className="monster-version relative text-xs text-gray-400 dark:text-gray-300">{`#${item.version}`}</span>
+              </div>
+            </div>
+          )}
+        />
+      </div>
+      {excluded.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 mt-2">
+          {excluded.map((sp) => (
+            <span
+              key={sp.name}
+              className="flex items-center gap-1 pl-1 pr-0.5 py-0.5 rounded bg-body-100 dark:bg-dark-400 text-xs"
+            >
+              {sp.image && (
+                <span className="w-4 h-4 flex items-center justify-center">
+                  <LazyImage responsive src={getWikiImage(sp.image)} alt="" />
+                </span>
+              )}
+              {sp.name}
+              <button
+                type="button"
+                className="text-gray-500 hover:text-red transition-colors"
+                onClick={() => store.toggleExcludedSpell(sp.name)}
+                aria-label={`Stop excluding ${sp.name}`}
+                data-tooltip-id="tooltip"
+                data-tooltip-content="Stop excluding this spell"
+              >
+                <IconX size={14} />
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            className="form-control text-xs ml-1"
+            onClick={() => store.setExcludedSpells([])}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+    </div>
+  );
+});
+
 interface ISlotLocksProps {
   equipment: PlayerEquipment;
   lockedSlots: (keyof PlayerEquipment)[];
@@ -343,7 +446,7 @@ const GearOptimizer: React.FC = observer(() => {
 
   // used to tell whether the results are out of date
   const inputsKey = JSON.stringify([
-    toJS(monster), toJS(player.skills), toJS(player.boosts), toJS(player.buffs), owned.map((o) => o.id), prayerUnlocks, usePrayers, thorough, locked, training ?? null,
+    toJS(monster), toJS(player.skills), toJS(player.boosts), toJS(player.buffs), owned.map((o) => o.id), prayerUnlocks, usePrayers, thorough, locked, training ?? null, toJS(store.excludedSpells),
   ]);
 
   const run = async () => {
@@ -359,7 +462,7 @@ const GearOptimizer: React.FC = observer(() => {
         player: toJS(player),
         monster: toJS(monster),
         opts: {
-          prayerUnlocks, noPrayers: !usePrayers, thorough, locked, training,
+          prayerUnlocks, noPrayers: !usePrayers, thorough, locked, training, excludedSpells: toJS(store.excludedSpells),
         },
       },
     };
@@ -472,6 +575,7 @@ const GearOptimizer: React.FC = observer(() => {
             </div>
             <SlotLocks equipment={player.equipment} lockedSlots={lockedSlots} setLockedSlots={setLockedSlots} />
             <ExcludedItems owned={ownedAll} />
+            <ExcludedSpells />
             <div className="flex items-center gap-3 my-3">
               <button
                 type="button"

@@ -139,6 +139,18 @@ describe('optimizeGear', () => {
     }
   });
 
+  test('never casts excluded spells', () => {
+    const bank = owned([1401, 4675, 4091, 4093]); // Mystic fire staff, Ancient staff, Mystic robe top, Mystic robe bottom
+    const before = optimizeGear(bank, player, monster, opts);
+    const firstChoice = before.magic[0].spell!.name;
+
+    const after = optimizeGear(bank, player, monster, { ...opts, excludedSpells: [firstChoice] });
+    expect(after.magic.length).toBeGreaterThan(0);
+    for (const l of after.magic) {
+      expect(l.spell?.name).not.toBe(firstChoice);
+    }
+  });
+
   describe('training filter', () => {
     // Abyssal whip, Rune longsword, Dragon scimitar, Rune crossbow, Diamond bolts (e), Mystic fire staff
     const bank = owned([4151, 1303, 4587, 9185, 9243, 1401]);

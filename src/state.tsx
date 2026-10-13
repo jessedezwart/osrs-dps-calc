@@ -58,6 +58,7 @@ export interface BankData {
 
 const BANK_STORAGE_KEY = 'dps-calc-bank';
 const EXCLUDED_ITEMS_STORAGE_KEY = 'dps-calc-excluded-items';
+const EXCLUDED_SPELLS_STORAGE_KEY = 'dps-calc-excluded-spells';
 
 const EMPTY_CALC_LOADOUT = {} as CalculatedLoadout;
 
@@ -235,6 +236,11 @@ class GlobalState implements State {
    * survives re-importing an updated bank.
    */
   excludedItemIds: number[] = [];
+
+  /**
+   * Names of spells that the gear optimizer should never use, e.g. because their runes are too expensive.
+   */
+  excludedSpells: string[] = [];
 
   ui: UI = {
     showPreferencesModal: false,
@@ -579,6 +585,24 @@ class GlobalState implements State {
     }).catch((e) => {
       console.error(e);
     });
+    localforage.getItem(EXCLUDED_SPELLS_STORAGE_KEY).then((v) => {
+      if (Array.isArray(v)) this.excludedSpells = v as string[];
+    }).catch((e) => {
+      console.error(e);
+    });
+  }
+
+  setExcludedSpells(names: string[]) {
+    this.excludedSpells = [...new Set(names)];
+    localforage.setItem(EXCLUDED_SPELLS_STORAGE_KEY, toJS(this.excludedSpells)).catch((e) => {
+      console.error(e);
+    });
+  }
+
+  toggleExcludedSpell(name: string) {
+    this.setExcludedSpells(this.excludedSpells.includes(name)
+      ? this.excludedSpells.filter((s) => s !== name)
+      : [...this.excludedSpells, name]);
   }
 
   setExcludedItemIds(ids: number[]) {
