@@ -5,6 +5,11 @@ Web-based DPS calculator for Old School RuneScape, created for the [OSRS Wiki](h
 
 This calculator determines how well certain loadouts, consisting of equipment, prayers, and buffs, will perform against monsters in the game. It heavily uses data from the OSRS Wiki.
 
+## Portable executable
+Every push to `main` publishes a portable build to [GitHub releases](../../releases/latest). Download the file for your OS and run it: it serves the calculator locally and opens it in your browser. No install needed.
+
+To build it yourself, run `yarn build`, copy `out/` to `desktop/site`, then run `go build` in `desktop/`.
+
 ## Contributing
 We accept issues and pull requests! [Click here for info](CONTRIBUTING.md).
 
