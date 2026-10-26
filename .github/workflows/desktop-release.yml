@@ -1,0 +1,81 @@
+name: Publish desktop release
+
+# Builds a portable executable that embeds the static site and publishes it as
+# a GitHub release on every push to main.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository != 'weirdgloop/osrs-dps-calc'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          cache: 'yarn'
+      - run: yarn install
+      - run: yarn run build
+      - name: Run tests
+        run: yarn test
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache: false
+      - name: Build executables
+        env:
+          VERSION: build-${{ github.run_number }}
+        run: |
+          cp -r out desktop/site
+          mkdir dist
+          cd desktop
+          build() {
+            CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath \
+              -ldflags "-s -w -X main.version=$VERSION" -o "$3" .
+          }
+          build windows amd64 ../dist/osrs-dps-calc-windows-x64.exe
+          for target in darwin/arm64/macos-arm64 darwin/amd64/macos-x64 linux/amd64/linux-x64; do
+            IFS=/ read -r os arch name <<< "$target"
+            build "$os" "$arch" osrs-dps-calc
+            tar -czf "../dist/osrs-dps-calc-$name.tar.gz" osrs-dps-calc
+            rm osrs-dps-calc
+          done
+          ls -la ../dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: build-${{ github.run_number }}
+        run: |
+          cat > notes.md <<NOTES
+          Portable OSRS DPS Calculator built from ${GITHUB_SHA::7}.
+
+          **Windows:** download \`osrs-dps-calc-windows-x64.exe\` and double-click it. If SmartScreen warns about an unknown publisher, click *More info* → *Run anyway*.
+
+          **macOS:** download the \`macos-arm64\` (Apple Silicon) or \`macos-x64\` (Intel) archive, extract it, then right-click \`osrs-dps-calc\` → *Open*.
+
+          **Linux:** extract the \`linux-x64\` archive and run \`./osrs-dps-calc\`.
+
+          The calculator opens in your browser. Keep the console window open while using it, and close it to quit.
+          NOTES
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "DPS Calculator $TAG" \
+            --notes-file notes.md \
+            --latest
