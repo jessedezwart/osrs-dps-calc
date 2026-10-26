@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  CalcProgress,
+  CalcProgressUnion,
   CalcRequestsUnion,
   CalcResponse,
   CalcResponsesUnion,
@@ -21,6 +23,9 @@ export class CalcWorker {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private pendingPromises: { [k in WorkerRequestType]?: DeferredPromise<any> } = {};
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private progressListeners: { [k in WorkerRequestType]?: (progress: any) => void } = {};
 
   private worker?: Worker;
 
@@ -60,7 +65,7 @@ export class CalcWorker {
   public async do<
     Req extends CalcRequestsUnion,
     Resp extends CalcResponse<Req['type']>,
-  >(req: Req): Promise<Resp> {
+  >(req: Req, opts?: { onProgress?: (progress: CalcProgress<Req['type']>) => void }): Promise<Resp> {
     // this can be hit early on during page load
     if (!this.worker) {
       return Promise.reject(new Error('worker is not initialized and cannot handle requests'));
@@ -75,6 +80,7 @@ export class CalcWorker {
     // deferred promise so that we can invoke the callback in onResponse
     const deferred = new DeferredPromise<Resp>();
     this.pendingPromises[req.type] = deferred;
+    this.progressListeners[req.type] = opts?.onProgress;
 
     const payload = JSON.stringify(req, WORKER_JSON_REPLACER);
     this.worker.postMessage(payload);
@@ -84,7 +90,16 @@ export class CalcWorker {
   }
 
   private onResponse(e: MessageEvent<string>) {
-    const data = JSON.parse(e.data, WORKER_JSON_REVIVER) as CalcResponsesUnion;
+    const parsed = JSON.parse(e.data, WORKER_JSON_REVIVER) as CalcResponsesUnion | CalcProgressUnion;
+    if ('progress' in parsed) {
+      // progress updates for a request that is still running, which don't resolve the promise
+      if (parsed.sequenceId === this.sequenceIds[parsed.type]) {
+        this.progressListeners[parsed.type]?.(parsed.progress);
+      }
+      return;
+    }
+
+    const data = parsed;
     const { type, sequenceId, error } = data;
     console.debug(`[CalcWorker ${this.id}] INBOUND ${sequenceId} ${WorkerRequestType[data.type]} | ${e.data}`);
 
@@ -102,6 +117,7 @@ export class CalcWorker {
       return;
     }
     this.pendingPromises[type] = undefined;
+    this.progressListeners[type] = undefined;
 
     // fail early on error, none of the other properties should be considered valid
     if (error) {

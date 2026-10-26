@@ -69,7 +69,19 @@ export default class BaseCalc {
   protected baseMonster: Monster;
 
   // Array of the names of all equipped items (for quick checks)
-  protected allEquippedItems: string[] = [];
+  private _allEquippedItems: string[] = [];
+
+  // The same names as a set, for wearing() which is called very often
+  private allEquippedItemSet: Set<string> = new Set();
+
+  protected get allEquippedItems(): string[] {
+    return this._allEquippedItems;
+  }
+
+  protected set allEquippedItems(items: string[]) {
+    this._allEquippedItems = items;
+    this.allEquippedItemSet = new Set(items);
+  }
 
   userIssues: UserIssue[] = [];
 
@@ -212,9 +224,9 @@ export default class BaseCalc {
    */
   protected wearing(item: string | string[]): boolean {
     if (Array.isArray(item)) {
-      return (item as string[]).some((i) => this.allEquippedItems.includes(i));
+      return (item as string[]).some((i) => this.allEquippedItemSet.has(i));
     }
-    return this.allEquippedItems.includes(item);
+    return this.allEquippedItemSet.has(item);
   }
 
   /**
@@ -222,7 +234,7 @@ export default class BaseCalc {
    * @param items - array of item names
    */
   protected wearingAll(items: string[]) {
-    return items.every((i) => this.allEquippedItems.includes(i));
+    return items.every((i) => this.allEquippedItemSet.has(i));
   }
 
   /**

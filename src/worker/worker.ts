@@ -3,6 +3,7 @@ import {
   CalcRequestsUnion,
   CalcResponse,
   Handler,
+  OptimizeGearProgressMessage,
   TtkRequest,
   TtkResponse,
   WorkerRequestType,
@@ -15,7 +16,8 @@ import { ttkDist } from '@/worker/ttkWorker';
 import { range } from 'd3-array';
 import { DeferredPromise, WORKER_JSON_REPLACER, WORKER_JSON_REVIVER } from '@/utils';
 import { NUMBER_OF_LOADOUTS } from '@/lib/constants';
-import { optimizeGear } from '@/lib/GearOptimizer';
+import { optimizeGear, optimizeGearWith, OptimizerResult } from '@/lib/GearOptimizer';
+import OptimizerPool from '@/worker/OptimizerPool';
 
 const computePvMValues: Handler<WorkerRequestType.COMPUTE_BASIC> = async (data) => {
   const { loadouts, monster, calcOpts } = data;
@@ -106,15 +108,65 @@ const compare: Handler<WorkerRequestType.COMPARE> = async (data) => {
   };
 };
 
-const optimize: Handler<WorkerRequestType.OPTIMIZE_GEAR> = async (data) => {
+/** How often (in ms) gear optimizer progress is sent to the main thread. */
+const OPTIMIZER_PROGRESS_INTERVAL_MS = 200;
+/** One thread is left for the main thread (this worker mostly waits while the pool runs). */
+const OPTIMIZER_POOL_SIZE = Math.max(1, Math.min((self.navigator?.hardwareConcurrency || 4) - 1, 16));
+
+// created on the first search, and kept around so that later searches don't wait for the workers to start
+let optimizerPool: OptimizerPool | undefined;
+let optimizerPoolBusy = false;
+
+const optimize: Handler<WorkerRequestType.OPTIMIZE_GEAR> = async (data, req) => {
   const {
     owned, player, monster, opts,
   } = data;
 
+  let lastProgressAt = 0;
+  let stylesDone = 0;
+  const sendProgress = (evaluations: number, force = false) => {
+    const now = self.performance.now();
+    if (!force && now - lastProgressAt < OPTIMIZER_PROGRESS_INTERVAL_MS) return;
+    lastProgressAt = now;
+    const msg: OptimizeGearProgressMessage = {
+      type: WorkerRequestType.OPTIMIZE_GEAR,
+      sequenceId: req.sequenceId!,
+      progress: { evaluations, stylesDone },
+    };
+    self.postMessage(JSON.stringify(msg, WORKER_JSON_REPLACER));
+  };
+
   const start = self.performance.now();
-  const result = optimizeGear(owned, player, monster, opts);
+  let result: OptimizerResult;
+  if (typeof Worker === 'undefined') {
+    // nested workers aren't supported, so search on this thread
+    result = optimizeGear(owned, player, monster, opts, (p) => {
+      stylesDone = p.stylesDone;
+      sendProgress(p.evaluations);
+    });
+  } else {
+    // a previous search is still running, but its results won't be used anymore
+    if (optimizerPool && optimizerPoolBusy) {
+      optimizerPool.terminate();
+      optimizerPool = undefined;
+    }
+    const pool = optimizerPool ?? new OptimizerPool(OPTIMIZER_POOL_SIZE);
+    optimizerPool = pool;
+    optimizerPoolBusy = true;
+
+    try {
+      pool.init(data, (evaluations) => sendProgress(evaluations));
+      const loadouts = await optimizeGearWith(opts, (job) => pool.run(job), () => {
+        stylesDone += 1;
+        sendProgress(pool.totalEvaluations, true);
+      });
+      result = { ...loadouts, evaluations: pool.totalEvaluations };
+    } finally {
+      if (optimizerPool === pool) optimizerPoolBusy = false;
+    }
+  }
   const end = self.performance.now();
-  console.debug(`Gear optimization of ${owned.length} items took ${end - start}ms (${result.evaluations} evaluations)`);
+  console.debug(`Gear optimization of ${owned.length} items took ${end - start}ms (${result.evaluations} evaluations, ${optimizerPool?.size ?? 1} threads)`);
 
   return result;
 };

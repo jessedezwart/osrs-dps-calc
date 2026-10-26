@@ -6,7 +6,7 @@ import PlayerInnerContainer from '@/app/components/player/PlayerInnerContainer';
 import LoadoutName from '@/app/components/player/LoadoutName';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import WikiSyncButton from 'src/app/components/player/WikiSyncButton';
-import BankImportButton from '@/app/components/player/BankImportButton';
+import BankImportButton, { BankExportDirCopy } from '@/app/components/player/BankImportButton';
 
 const PlayerContainer: React.FC = observer(() => {
   const store = useStore();
@@ -75,6 +75,7 @@ const PlayerContainer: React.FC = observer(() => {
             </button>
           </div>
         </div>
+        <BankExportDirCopy />
         <PlayerInnerContainer />
       </div>
     </div>

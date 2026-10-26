@@ -1,7 +1,11 @@
 import { describe, expect, test } from '@jest/globals';
-import { optimizeGear, pruneDominated, TrainingSkill } from '@/lib/GearOptimizer';
+import {
+  equipmentWeight, GearOptimizer, optimizeGear, optimizeGearWith, OPTIMIZER_STYLES, OptimizerProgress, pruneDominated,
+  TrainingSkill,
+} from '@/lib/GearOptimizer';
 import { CombatStyleStance } from '@/types/PlayerCombatStyle';
 import { resolveOwnedEquipment } from '@/lib/BankImport';
+import { CAST_STANCES } from '@/lib/constants';
 import { EquipmentPiece } from '@/types/Player';
 import { findEquipmentById, getTestMonster, getTestPlayer } from '@/tests/utils/TestUtils';
 
@@ -55,6 +59,15 @@ describe('optimizeGear', () => {
     expect(best.equipment.ammo?.name).toMatch(/bolts \(e\)$/);
   });
 
+  test('skips ammo that is never better than other ammo for the weapon', () => {
+    // Rune crossbow, Adamant bolts, Runite bolts, Broad bolts, Amethyst broad bolts, Diamond bolts (e), Ruby bolts (e)
+    const result = optimizeGear(owned([9185, 9143, 9144, 11875, 21316, 9243, 9242]), player, monster, opts);
+    // adamant bolts are worse than runite bolts, and broad bolts worse than amethyst broad bolts (with the same effect),
+    // but the enchanted bolts have different effects
+    expect(result.summary.ranged!.candidatesPerSlot.ammo).toBe(4);
+    expect(result.ranged[0].equipment.ammo?.name).toMatch(/bolts \(e\)$/);
+  });
+
   test('never pairs a two-handed weapon with a shield', () => {
     // Dragon 2h sword, Dragon defender
     const result = optimizeGear(owned([7158, 12954]), player, monster, opts);
@@ -72,14 +85,6 @@ describe('optimizeGear', () => {
     expect(best.equipment.weapon?.name).toBe('Mystic fire staff');
     expect(best.spell).not.toBeNull();
     expect(best.prayers.length).toBe(1);
-  });
-
-  test('thorough mode is at least as good as the normal search', () => {
-    const bank = owned([4151, 1303, 12954, 11665, 13072, 13073, 8842, 1163, 1127, 1079, 1059, 6570, 6585, 7462, 11840]);
-    const normal = optimizeGear(bank, player, monster, opts);
-    const thorough = optimizeGear(bank, player, monster, { ...opts, thorough: true });
-    expect(thorough.melee[0].dps).toBeGreaterThanOrEqual(normal.melee[0].dps);
-    expect(thorough.evaluations).toBeGreaterThanOrEqual(normal.evaluations);
   });
 
   describe('locked slots', () => {
@@ -151,6 +156,149 @@ describe('optimizeGear', () => {
     }
   });
 
+  test('only casts the chosen spell', () => {
+    // Mystic fire staff, Ancient staff, Trident of the seas, Mystic robe top, Mystic robe bottom
+    const bank = owned([1401, 4675, 11905, 4091, 4093]);
+    const result = optimizeGear(bank, player, monster, { ...opts, spell: 'Fire Bolt', excludedSpells: ['Fire Bolt'] });
+    expect(result.magic.length).toBeGreaterThan(0);
+    for (const l of result.magic) {
+      expect(l.spell?.name).toBe('Fire Bolt');
+      // the trident's built-in spell isn't used, but it can still manually cast
+      expect(CAST_STANCES).toContain(l.style.stance);
+    }
+  });
+
+  test('only searches the chosen styles', () => {
+    const bank = owned([4151, 9185, 9243, 1401]); // Abyssal whip, Rune crossbow, Diamond bolts (e), Mystic fire staff
+    const progress: OptimizerProgress[] = [];
+    const result = optimizeGear(bank, player, monster, { ...opts, styles: ['ranged'] }, (p) => progress.push(p));
+    expect(result.ranged.length).toBeGreaterThan(0);
+    expect(result.melee).toEqual([]);
+    expect(result.magic).toEqual([]);
+    expect(Object.keys(result.summary)).toEqual(['ranged']);
+    expect(progress[progress.length - 1].stylesDone).toBe(1);
+  });
+
+  describe('minimum weight', () => {
+    // Abyssal whip, Dragon defender, Rune kiteshield, Rune full helm, Rune platebody, Rune platelegs, Leather gloves
+    const bank = owned([4151, 12954, 1201, 1163, 1127, 1079, 1059]);
+
+    test('only returns setups that are heavy enough', () => {
+      const unweighted = optimizeGear(bank, player, monster, opts);
+      expect(unweighted.melee[0].equipment.shield?.name).toBe('Dragon defender');
+
+      // the (heavier, weaker) kiteshield is needed to reach the weight
+      const minWeight = unweighted.melee[0].weight + 3;
+      const result = optimizeGear(bank, player, monster, { ...opts, minWeight });
+      expect(result.melee[0].equipment.shield?.name).toBe('Rune kiteshield');
+      expect(result.melee[0].dps).toBeLessThan(unweighted.melee[0].dps);
+      for (const style of ['melee', 'ranged', 'magic'] as const) {
+        for (const l of result[style]) {
+          expect(l.weight).toBeGreaterThanOrEqual(minWeight - 1e-6);
+          expect(l.weight).toBeCloseTo(equipmentWeight(l.equipment));
+        }
+      }
+    });
+
+    test('returns nothing if the weight cannot be reached', () => {
+      const result = optimizeGear(bank, player, monster, { ...opts, minWeight: 1000 });
+      expect(result.melee).toHaveLength(0);
+    });
+  });
+
+  test('lists equal-DPS items with more offensive stats as alternatives', () => {
+    // Abyssal whip, Dragon defender, Obsidian platelegs, Torag's platelegs
+    const bank = owned([4151, 20463, 21304, 4751]);
+    const boosted = getTestPlayer(monster, { boosts: { atk: 10, str: 10 } });
+    const best = optimizeGear(bank, boosted, monster, opts).melee[0];
+
+    // the +1 strength doesn't change the max hit, so the legs with more defence are picked...
+    expect(best.equipment.legs?.name).toBe("Torag's platelegs");
+    // ...but the +1 strength matters once the boost has drained a little
+    const alt = best.alternatives.find((a) => a.item.name === 'Obsidian platelegs');
+    expect(alt?.slot).toBe('legs');
+    expect(alt?.betterAfterDrain?.levels).toBeGreaterThan(0);
+    expect(alt?.betterAfterDrain?.dpsGain).toBeGreaterThan(0);
+  });
+
+  describe('ammo with weapons that do not use it', () => {
+    // Rune knife, Rune javelin, Mithril javelin, Holy blessing, Iron arrow, Rune arrow
+    const bank = owned([876, 836, 834, 20220, 885, 893]);
+
+    test('picks ammo by its stats that still apply, and lists no alternatives for it', () => {
+      const best = optimizeGear(bank, player, monster, opts).ranged[0];
+      expect(best.equipment.weapon?.name).toBe('Rune knife');
+      // the javelins' ranged strength does nothing for a knife, so the prayer bonus wins
+      expect(best.equipment.ammo?.name).toBe('Holy blessing');
+      expect(best.alternatives.filter((a) => a.slot === 'ammo')).toEqual([]);
+    });
+
+    test('still tries an arrow, for monsters that need one', () => {
+      // Fareed is immune to ranged attacks without arrows
+      const fareed = getTestMonster('Fareed');
+      const best = optimizeGear(bank, getTestPlayer(fareed), fareed, opts).ranged[0];
+      expect(best.dps).toBeGreaterThan(0);
+      expect(best.equipment.ammo?.name).toMatch(/arrow$/);
+    });
+  });
+
+  test('gives the same results when the jobs are spread over separate optimizers', async () => {
+    const bank = owned([4151, 1303, 12954, 11665, 13072, 13073, 8842, 1163, 1127, 9185, 9243, 9242, 876, 20220, 1401, 4091, 4093]);
+    const expected = optimizeGear(bank, player, monster, opts);
+
+    // round-robin over a few optimizers, like a pool of workers would
+    const optimizers = [0, 1, 2].map(() => new GearOptimizer(bank, player, monster, opts));
+    let next = 0;
+    const done: string[] = [];
+    const result = await optimizeGearWith(
+      opts,
+      async (job) => {
+        next += 1;
+        const optimizer = optimizers[next % optimizers.length];
+        const before = optimizer.evaluations;
+        // round-trip through JSON, as messages between workers do
+        const r = JSON.parse(JSON.stringify(optimizer.runJob(JSON.parse(JSON.stringify(job)))));
+        return { result: r, evaluations: optimizer.evaluations - before };
+      },
+      (style) => done.push(style),
+    );
+
+    expect(done.sort()).toEqual([...OPTIMIZER_STYLES].sort());
+    for (const style of OPTIMIZER_STYLES) {
+      expect(JSON.parse(JSON.stringify(result[style]))).toEqual(JSON.parse(JSON.stringify(expected[style])));
+      // the separate caches mean more evaluations, but the rest of the summary is the same
+      const { evaluations, ...summary } = result.summary[style]!;
+      const { evaluations: expectedEvaluations, ...expectedSummary } = expected.summary[style]!;
+      expect(summary).toEqual(expectedSummary);
+      expect(Object.keys(evaluations).sort()).toEqual(Object.keys(expectedEvaluations).sort());
+    }
+  });
+
+  test('summarises the search', () => {
+    // Abyssal whip, Rune longsword, Dragon defender, Rune full helm, Fire cape
+    const result = optimizeGear(owned([4151, 1303, 12954, 1163, 6570]), player, monster, opts);
+    const melee = result.summary.melee!;
+    // the two swords and unarmed
+    expect(melee.weaponsScreened).toBe(3);
+    expect(melee.weaponsRefined).toBe(3);
+    expect(melee.candidatesPerSlot.shield).toBe(1);
+    expect(melee.candidatesPerSlot.ring).toBe(0);
+    expect(melee.pairSwapped).toBe(3);
+    // the evaluations per step add up to the total
+    const total = OPTIMIZER_STYLES
+      .flatMap((s) => Object.values(result.summary[s]!.evaluations))
+      .reduce((a, b) => a + b, 0);
+    expect(total).toBe(result.evaluations);
+  });
+
+  test('reports progress', () => {
+    const bank = owned([4151, 9185, 9243, 1401]); // Abyssal whip, Rune crossbow, Diamond bolts (e), Mystic fire staff
+    const progress: OptimizerProgress[] = [];
+    const result = optimizeGear(bank, player, monster, opts, (p) => progress.push(p));
+    expect(progress.map((p) => p.stylesDone)).toEqual(expect.arrayContaining([1, 2, 3]));
+    expect(progress[progress.length - 1]).toEqual({ evaluations: result.evaluations, stylesDone: 3 });
+  });
+
   describe('training filter', () => {
     // Abyssal whip, Rune longsword, Dragon scimitar, Rune crossbow, Diamond bolts (e), Mystic fire staff
     const bank = owned([4151, 1303, 4587, 9185, 9243, 1401]);
@@ -203,8 +351,11 @@ describe('optimizeGear', () => {
       4675, 1401, 4710, 4714, 12658, 2415, 28585, 30634, 4089, 4091, 4093, 4095, 4097, 26914, 26850,
       21791, 12612, 29889, 30957, 29084, 28988, 9097, 26969, 34428, 30638,
     ]);
+    // the full exhaustive search takes minutes on a single thread, so it gets a small budget here
+    const budget = 20_000;
+    const withoutExhaustive = optimizeGear(bank, player, monster, { ...opts, exhaustiveBudget: 0 });
     const start = performance.now();
-    const result = optimizeGear(bank, player, monster, opts);
+    const result = optimizeGear(bank, player, monster, { ...opts, exhaustiveBudget: budget });
     const elapsed = performance.now() - start;
     console.log(`Optimized ${bank.length} items in ${elapsed.toFixed(0)}ms with ${result.evaluations} evaluations`, {
       melee: result.melee[0]?.dps,
@@ -212,9 +363,13 @@ describe('optimizeGear', () => {
       magic: result.magic[0]?.dps,
     });
 
-    expect(result.melee[0].dps).toBeGreaterThan(0);
-    expect(result.ranged[0].dps).toBeGreaterThan(0);
-    expect(result.magic[0].dps).toBeGreaterThan(0);
-    expect(result.evaluations).toBeLessThan(30000);
+    for (const style of OPTIMIZER_STYLES) {
+      expect(result[style][0].dps).toBeGreaterThan(0);
+      // the exhaustive search only ever improves the results
+      expect(result[style][0].dps).toBeGreaterThanOrEqual(withoutExhaustive[style][0].dps);
+    }
+    expect(withoutExhaustive.evaluations).toBeLessThan(30000);
+    // the best result per style gets the budget, and the other 4 a quarter each
+    expect(result.evaluations).toBeLessThanOrEqual(withoutExhaustive.evaluations + OPTIMIZER_STYLES.length * 2 * budget);
   }, 120000);
 });

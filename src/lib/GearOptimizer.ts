@@ -13,6 +13,7 @@ import {
   calculateEquipmentBonusesFromGear,
   canBlowpipeUseDart,
   DART_TIER,
+  getCanonicalItemId,
 } from '@/lib/Equipment';
 import { BLOWPIPE_IDS, CAST_STANCES } from '@/lib/constants';
 import { getCombatStylesForCategory } from '@/utils';
@@ -35,6 +36,11 @@ const MELEE_STANCE_FOR_TRAINING: { [k in TrainingSkill]: CombatStyleStance } = {
 };
 export const OPTIMIZER_STYLES: OptimizerStyle[] = ['melee', 'ranged', 'magic'];
 
+/** The styles that the search with these options covers, in the order of OPTIMIZER_STYLES. */
+export const searchedStyles = (opts: Pick<OptimizerOpts, 'styles'>): OptimizerStyle[] => (opts.styles
+  ? OPTIMIZER_STYLES.filter((s) => opts.styles!.includes(s))
+  : OPTIMIZER_STYLES);
+
 export interface OptimizerOpts {
   /** Whether Rigour and Augury are unlocked. If not, Eagle Eye and Mystic Might are used instead. */
   prayerUnlocks: boolean;
@@ -43,10 +49,10 @@ export interface OptimizerOpts {
   /** How many results (each with a different weapon) to return per style. */
   resultsPerStyle?: number;
   /**
-   * Search much more of the space: refine more weapons, try owned sets on more weapons, and also try changing two
-   * slots at once. Considerably slower.
+   * How many setups the final exhaustive search may try for the best result in each style (the other results get a
+   * fraction of this). Defaults to EXHAUSTIVE_BUDGET.
    */
-  thorough?: boolean;
+  exhaustiveBudget?: number;
   /**
    * Slots that are fixed to a specific item (or to being empty, if null). These items don't need to be owned, and the
    * rest of the gear is searched around them.
@@ -56,6 +62,18 @@ export interface OptimizerOpts {
   training?: TrainingSkill;
   /** Names of spells that should never be used (e.g. because their runes are too expensive). */
   excludedSpells?: string[];
+  /**
+   * The name of the only spell to cast with magic. Powered staves can then only manually cast it (their built-in spell
+   * isn't used), and excludedSpells is ignored.
+   */
+  spell?: string;
+  /** The styles to search. Defaults to all of OPTIMIZER_STYLES. */
+  styles?: OptimizerStyle[];
+  /**
+   * The minimum total weight (in kg) of the equipped gear, for content that needs it. Setups lighter than this are
+   * never returned. Setting this also makes the search go deeper, as the constraint makes single swaps less effective.
+   */
+  minWeight?: number;
 }
 
 export interface OptimizedLoadout {
@@ -66,20 +84,75 @@ export interface OptimizedLoadout {
   dps: number;
   maxHit: number;
   accuracy: number;
+  /** The total weight of the equipment, in kg. */
+  weight: number;
+  /**
+   * Items that give exactly the same DPS in a slot, but trade the chosen item's defensive stats for more offensive
+   * stats that don't currently make a difference (e.g. +1 strength that doesn't reach the next max hit).
+   */
+  alternatives: LoadoutAlternative[];
 }
 
-export type OptimizerResult = { [k in OptimizerStyle]: OptimizedLoadout[] } & {
-  /** The number of unique DPS calculations performed. */
+export interface LoadoutAlternative {
+  slot: keyof PlayerEquipment;
+  item: EquipmentPiece;
+  /**
+   * If the alternative becomes better than the chosen item as boosts wear off, how many levels of boost need to drain
+   * before it does, and the DPS it then gains over the chosen item. Not set if it never becomes better.
+   */
+  betterAfterDrain?: { levels: number, dpsGain: number };
+}
+
+export interface OptimizerProgress {
+  /** The number of DPS calculations performed so far. */
   evaluations: number;
+  /** How many of the styles have finished searching (they may be searched at the same time). */
+  stylesDone: number;
+}
+
+export type OptimizerProgressCallback = (progress: OptimizerProgress) => void;
+
+/** How often (in ms) progress is reported while searching. */
+const PROGRESS_INTERVAL_MS = 200;
+
+/** What the search did for one style, for showing to the user. */
+export interface StyleSearchSummary {
+  /** Weapons tried with the screening armour (each blowpipe and dart pair counts separately, as does unarmed). */
+  weaponsScreened: number;
+  /** Items tried in each armour slot (after dropping items that are never better than another owned item). */
+  candidatesPerSlot: Partial<Record<keyof PlayerEquipment, number>>;
+  /** Spells tried with each casting weapon. */
+  spells: number;
+  /** Weapons whose armour was searched in full. */
+  weaponsRefined: number;
+  /** Extra searches started from owned armour sets (void etc.) */
+  setStarts: number;
+  /** Results that also got the two-slot swap search. */
+  pairSwapped: number;
+  /** Combinations tried by the exhaustive search, over all shown results. */
+  exhaustiveCombinations: number;
+  /** Shown results that the exhaustive search improved. */
+  exhaustiveImprovements: number;
+  /** DPS calculations per step of the search. */
+  evaluations: Partial<Record<OptimizerJob['kind'], number>>;
+}
+
+export type OptimizerLoadouts = { [k in OptimizerStyle]: OptimizedLoadout[] };
+
+/** The loadouts of the styles that weren't searched are empty, and they have no summary. */
+export type OptimizerResult = OptimizerLoadouts & {
+  /** The number of DPS calculations performed. */
+  evaluations: number;
+  summary: { [k in OptimizerStyle]?: StyleSearchSummary };
 };
 
-interface Config {
+export interface Config {
   equipment: PlayerEquipment;
   style: PlayerCombatStyle;
   spell: Spell | null;
 }
 
-interface Score {
+export interface Score {
   dps: number;
   maxHit: number;
   accuracy: number;
@@ -95,17 +168,49 @@ const ARMOUR_SLOTS = SLOTS.filter((s) => s !== 'weapon');
 const MELEE_TYPES = ['stab', 'slash', 'crush'];
 
 /** Weapons whose ranking is decided by a full armour search (rather than just the screening armour). */
-const WEAPONS_TO_REFINE = 5;
-const THOROUGH_WEAPONS_TO_REFINE = 15;
+const WEAPONS_TO_REFINE = 40;
 /** Weapons that also get tried with each owned armour set (void etc.) */
-const WEAPONS_FOR_SET_SEEDS = 2;
-const THOROUGH_WEAPONS_FOR_SET_SEEDS = 5;
-/** In thorough mode, how many of the final results get the (expensive) two-slot swap search. */
-const THOROUGH_PAIR_SWAP_RESULTS = 5;
-/** In the two-slot swap search, how many of the best items in each slot are paired up with each other. */
-const PAIR_CANDIDATES_PER_SLOT = 4;
-const MAX_PAIR_ROUNDS = 3;
-const MAX_DESCENT_PASSES = 4;
+const WEAPONS_FOR_SET_SEEDS = 15;
+/**
+ * How many of the best refined results get the (expensive) two-slot swap search. This is more than are shown, as the
+ * swaps can move a result up into the shown ones.
+ */
+const PAIR_SWAP_RESULTS = 15;
+/**
+ * In the two-slot swap search, how many of the best items in each slot are paired up with each other. With a minimum
+ * weight, the heaviest items in each slot are paired up too, as single swaps get stuck more easily (e.g. a heavy item
+ * can only be dropped if another slot gets heavier at the same time).
+ */
+const PAIR_CANDIDATES_PER_SLOT = 6;
+const MAX_PAIR_ROUNDS = 6;
+const MAX_DESCENT_PASSES = 8;
+/** How many swaps can be made to bring a setup up to the minimum weight before giving up on it. */
+const MAX_WEIGHT_REPAIR_STEPS = 20;
+/**
+ * With a minimum weight, each start is also refined with weight valued at these fractions of the start's DPS (spread
+ * over the minimum weight), i.e. how much DPS it's worth giving up to reach the weight. Different values spread the
+ * weight over the slots differently.
+ */
+const WEIGHT_TRADE_FRACTIONS = [0.02, 0.05, 0.1, 0.2, 0.4, 0.8];
+const WEIGHT_EPSILON = 1e-6;
+/**
+ * The final step tries every combination of a shortlist of items per slot around each shown result, which finds
+ * improvements that need many slots to change at once. This is how many combinations may be tried for the best result
+ * in each style; the other shown results get EXHAUSTIVE_OTHERS_FRACTION of it.
+ */
+export const EXHAUSTIVE_BUDGET = 60_000;
+const EXHAUSTIVE_OTHERS_FRACTION = 0.25;
+/** Each result's combinations are split into up to this many jobs (so that they can run in parallel)... */
+const EXHAUSTIVE_CHUNKS_PER_RESULT = 32;
+/** ...but no smaller than this many combinations each, as each job has some overhead. */
+const EXHAUSTIVE_MIN_CHUNK_SIZE = 5_000;
+/**
+ * With a minimum weight, shortlisted items are ranked as if each kg gained were worth this fraction of the result's DPS
+ * (spread over the minimum weight), so that heavy items that make room for better items elsewhere are shortlisted too.
+ */
+const SHORTLIST_WEIGHT_FRACTION = 0.2;
+/** The most equal-DPS alternatives shown per result. */
+const MAX_ALTERNATIVES = 6;
 const SPELLS_TO_CONSIDER = 6;
 const EPSILON = 1e-9;
 
@@ -122,6 +227,14 @@ const SPECIAL_EFFECT_ITEMS: RegExp[] = [
   /amulet of the damned/i, /amulet of avarice/i, /(blood|eclipse|blue) moon/i, /^tome of/i, /elemental amulet/i,
   /brimstone ring/i, /chaos gauntlets/i, /confliction gauntlets/i, /echo boots/i, /efaritay/i, /lightbearer/i,
   /(guthix|saradomin|zamorak) (max )?cape/i, /justiciar/i, /dizana/i, /crystal blessing/i, /holy water/i,
+];
+
+/**
+ * Ammo with effects that only apply when it's fired: the enchanted bolt procs the calc models, leaf-bladed (turoths and
+ * kurasks), silver (vampyres), brutal arrows (ogres), ice arrows (Fire Warrior) and dragon arrows (dark bow spec).
+ */
+const AMMO_EFFECT_ITEMS: RegExp[] = [
+  /^(opal|pearl|ruby|diamond|dragonstone|onyx) (?:dragon )?bolts \(e\)/i, /broad (?:arrows|bolts)/i, /^silver bolts/i, / brutal/i, /^ice arrows/i, /^dragon arrow/i,
 ];
 
 /**
@@ -207,43 +320,90 @@ const getPrayers = (style: OptimizerStyle, prayerUnlocks: boolean): Prayer[] => 
   }
 };
 
+export const equipmentWeight = (equipment: PlayerEquipment): number => SLOTS
+  .reduce((sum, s) => sum + (equipment[s]?.weight || 0), 0);
+
+const meetsMinWeight = (c: { equipment: PlayerEquipment }, opts: OptimizerOpts) => !opts.minWeight
+  || equipmentWeight(c.equipment) >= opts.minWeight - WEIGHT_EPSILON;
+
 const isSpecialEffectItem = (item: EquipmentPiece) => SPECIAL_EFFECT_ITEMS.some((r) => r.test(item.name));
+
+/** Items with a special effect can only be pruned by items with the same effect, which is never the case by default. */
+const specialEffectOf = (item: EquipmentPiece): string | null => (isSpecialEffectItem(item) ? `item ${item.id}` : null);
+
+/** The effect of ammo that's fired, e.g. 'diamond' for both diamond bolts (e) and diamond dragon bolts (e). */
+const firedAmmoEffectOf = (item: EquipmentPiece): string | null => {
+  for (const r of AMMO_EFFECT_ITEMS) {
+    const match = r.exec(item.name);
+    if (match) return (match[1] ?? match[0]).toLowerCase();
+  }
+  return specialEffectOf(item);
+};
 
 const defensiveSum = (item: EquipmentPiece) => item.defensive.stab + item.defensive.slash + item.defensive.crush
   + item.defensive.magic + item.defensive.ranged;
 
-/** The stats that matter for a given style, used to prune items that are strictly worse than another owned item. */
-const relevantStats = (item: EquipmentPiece, style: OptimizerStyle): number[] => {
+/** An item's contribution to the tiebreak between setups with equal DPS (see Score.tiebreak). */
+const tiebreakStat = (item: EquipmentPiece) => defensiveSum(item) + item.bonuses.prayer;
+
+/**
+ * The stats that matter for a given style, used to prune items that are strictly worse than another owned item. The
+ * last one is the tiebreak.
+ * @param ignoreRangedStats - for ammo with a weapon that doesn't use it, whose ranged stats don't apply
+ */
+const relevantStats = (item: EquipmentPiece, style: OptimizerStyle, ignoreRangedStats = false): number[] => {
   switch (style) {
     case 'melee':
-      return [item.offensive.stab, item.offensive.slash, item.offensive.crush, item.bonuses.str, defensiveSum(item)];
+      return [item.offensive.stab, item.offensive.slash, item.offensive.crush, item.bonuses.str, tiebreakStat(item)];
     case 'ranged':
-      return [item.offensive.ranged, item.bonuses.ranged_str, defensiveSum(item)];
+      return ignoreRangedStats
+        ? [0, 0, tiebreakStat(item)]
+        : [item.offensive.ranged, item.bonuses.ranged_str, tiebreakStat(item)];
     case 'magic':
     default:
-      return [item.offensive.magic, item.bonuses.magic_str, defensiveSum(item)];
+      return [item.offensive.magic, item.bonuses.magic_str, tiebreakStat(item)];
   }
 };
 
+/** The offensive stats that matter for a given style (an empty slot has none). */
+const offensiveStats = (item: EquipmentPiece | null, style: OptimizerStyle, ignoreRangedStats = false): number[] => {
+  if (!item) return style === 'melee' ? [0, 0, 0, 0] : [0, 0];
+  return relevantStats(item, style, ignoreRangedStats).slice(0, -1);
+};
+
+/**
+ * The stats of ammo for weapons that don't use it. Only its tiebreak stats and any effects matter, except that the
+ * calc also checks for arrows in some places (e.g. Fareed is immune to ranged attacks without them), so the best arrow
+ * is kept too.
+ */
+const unusedAmmoStats = (item: EquipmentPiece, style: OptimizerStyle): number[] => [
+  ...relevantStats(item, style, true),
+  item.name.includes('arrow') ? 1 : 0,
+];
+
 /**
  * Removes items that are no better than another item in the same list in every stat relevant to the style.
- * Items with special effects are always kept.
+ * Items with special effects are kept, unless another item with the same effect is better.
  */
-export const pruneDominated = (items: EquipmentPiece[], style: OptimizerStyle): EquipmentPiece[] => {
-  const stats = items.map((i) => relevantStats(i, style));
-  return items.filter((item, i) => {
-    if (isSpecialEffectItem(item)) return true;
-    return !items.some((other, j) => {
-      if (i === j) return false;
-      const a = stats[i];
-      const b = stats[j];
-      const allAtLeast = b.every((v, k) => v >= a[k]);
-      if (!allAtLeast) return false;
-      const strictlyBetter = b.some((v, k) => v > a[k]);
-      // for identical stats, keep only the first occurrence
-      return strictlyBetter || j < i;
-    });
-  });
+export const pruneDominated = (
+  items: EquipmentPiece[],
+  style: OptimizerStyle,
+  statsOf: (item: EquipmentPiece) => number[] = (item) => relevantStats(item, style),
+  effectOf: (item: EquipmentPiece) => string | null = specialEffectOf,
+): EquipmentPiece[] => {
+  const stats = items.map(statsOf);
+  const effects = items.map(effectOf);
+  return items.filter((item, i) => !items.some((other, j) => {
+    if (i === j) return false;
+    if (effects[i] !== null && effects[j] !== effects[i]) return false;
+    const a = stats[i];
+    const b = stats[j];
+    const allAtLeast = b.every((v, k) => v >= a[k]);
+    if (!allAtLeast) return false;
+    const strictlyBetter = b.some((v, k) => v > a[k]);
+    // for identical stats, keep only the first occurrence
+    return strictlyBetter || j < i;
+  }));
 };
 
 const isStyleInFamily = (style: PlayerCombatStyle, family: OptimizerStyle): boolean => {
@@ -278,13 +438,19 @@ const stanceTrains = (style: PlayerCombatStyle, family: OptimizerStyle, category
 
 /**
  * The combat styles worth trying for the weapon. Without a training filter, stances that can never be better for DPS
- * than another stance of the same type (e.g. Defensive vs Accurate) are dropped.
+ * than another stance of the same type (e.g. Defensive vs Accurate) are dropped. With a fixed spell, only stances that
+ * cast it are kept.
  */
-const getStyles = (weapon: EquipmentPiece | null, family: OptimizerStyle, training?: TrainingSkill): PlayerCombatStyle[] => {
+const getStyles = (
+  weapon: EquipmentPiece | null,
+  family: OptimizerStyle,
+  { training, spell }: Pick<OptimizerOpts, 'training' | 'spell'>,
+): PlayerCombatStyle[] => {
   const category = weapon?.category || EquipmentCategory.NONE;
   const seen = new Set<string>();
   return getCombatStylesForCategory(category).filter((s) => {
     if (!isStyleInFamily(s, family)) return false;
+    if (family === 'magic' && spell && !CAST_STANCES.includes(s.stance)) return false;
     if (training) {
       if (!stanceTrains(s, family, category, training)) return false;
     } else {
@@ -299,8 +465,14 @@ const getStyles = (weapon: EquipmentPiece | null, family: OptimizerStyle, traini
   });
 };
 
+// the calc canonicalizes items before checking ammo, so e.g. variants of a bow accept the same ammo
 const weaponRequiresAmmo = (weapon: EquipmentPiece | null) => weapon !== null
-  && ammoApplicability(weapon.id, undefined) === AmmoApplicability.INVALID;
+  && ammoApplicability(getCanonicalItemId(weapon.id), undefined) === AmmoApplicability.INVALID;
+
+const ammoWorksWith = (weapon: EquipmentPiece, ammo: EquipmentPiece) => ammoApplicability(
+  getCanonicalItemId(weapon.id),
+  getCanonicalItemId(ammo.id),
+) === AmmoApplicability.INCLUDED;
 
 const styleKey = (s: PlayerCombatStyle) => `${s.name}/${s.type}/${s.stance}`;
 
@@ -331,6 +503,69 @@ const EMPTY_SCORE: Score = {
   dps: 0, maxHit: 0, accuracy: 0, tiebreak: -Infinity,
 };
 
+export type ScoredConfig = [Config, Score];
+
+/** A finished result, with the score it is ranked by. */
+export interface FinishedLoadout {
+  loadout: OptimizedLoadout;
+  score: Score;
+}
+
+/**
+ * The items to try in each slot around a result, for the exhaustive search. Items are referred to by ID (null for an
+ * empty slot) to keep the jobs small. Slots that aren't listed keep the start's item.
+ */
+export interface Shortlist {
+  start: Config;
+  slots: (keyof PlayerEquipment)[];
+  itemIds: (number | null)[][];
+}
+
+/**
+ * A unit of work in the search. Jobs only depend on the inputs the GearOptimizer was created with (not on any earlier
+ * jobs it ran), so they can be run on separate GearOptimizers, e.g. one per thread.
+ *   - plan: screens and ranks the weapons, and returns the configs to start refining from
+ *   - refine: runs the coordinate descent from a start config (null if the result is unusable)
+ *   - pairSwap: runs the two-slot swap search on a refined result
+ *   - shortlist: picks the items per slot for the exhaustive search around a result
+ *   - exhaust: tries the shortlist's combinations that start with the given item indices in its first slots, and
+ *     returns the best (null if none are usable)
+ *   - describe: makes a final pass of single swaps, and turns the result into a loadout (with alternatives)
+ */
+export type OptimizerJob =
+  | { kind: 'plan', family: OptimizerStyle }
+  | { kind: 'refine', family: OptimizerStyle, start: Config }
+  | { kind: 'pairSwap', family: OptimizerStyle, start: Config }
+  | { kind: 'shortlist', family: OptimizerStyle, start: Config, budget: number }
+  | { kind: 'exhaust', family: OptimizerStyle, shortlist: Shortlist, prefix: number[] }
+  | { kind: 'describe', family: OptimizerStyle, start: Config };
+
+export interface PlanResult extends Pick<StyleSearchSummary, 'weaponsScreened' | 'candidatesPerSlot' | 'spells' | 'weaponsRefined' | 'setStarts'> {
+  starts: Config[];
+}
+
+type JobResults = {
+  plan: PlanResult;
+  refine: ScoredConfig | null;
+  pairSwap: ScoredConfig;
+  shortlist: Shortlist;
+  exhaust: { best: ScoredConfig | null, tried: number };
+  describe: FinishedLoadout;
+};
+export type OptimizerJobResult<J extends OptimizerJob> = JobResults[J['kind']];
+
+/** The parts of the search that depend on the style being searched. */
+interface StyleState {
+  prayers: Prayer[];
+  /** The (pruned) items to try in each armour slot. */
+  slotCandidates: Partial<Record<keyof PlayerEquipment, EquipmentPiece[]>>;
+  /** The ammo to try with weapons that don't use ammo, pruned by the stats that still apply. */
+  unusedAmmoCandidates: EquipmentPiece[];
+  /** The (pruned) ammo to try with each weapon that needs ammo, by canonical weapon id. Filled lazily. */
+  ammoCandidatesByWeapon: Map<number, EquipmentPiece[]>;
+  spellCandidates: Spell[];
+}
+
 /**
  * Finds the highest-DPS loadouts for each combat style, using only the provided (owned) equipment.
  *
@@ -338,10 +573,15 @@ const EMPTY_SCORE: Score = {
  *   1. find a reasonable armour set around the strongest weapon (coordinate descent: swap one slot at a time while it
  *      improves DPS),
  *   2. rank every owned weapon (with its best stance, ammo, and spell) using that armour,
- *   3. for the best few weapons, run the coordinate descent again, both from the screening armour and from any owned
+ *   3. for the best weapons, run the coordinate descent again, both from the screening armour and from any owned
  *      multi-piece sets (void etc.) whose bonuses can't be found one swap at a time,
- *   4. in thorough mode, refine many more weapons, and finish the best results with two-slot swaps, which can escape
- *      set-ups where no single swap helps.
+ *   4. finish the best results with two-slot swaps, which can escape set-ups where no single swap helps,
+ *   5. around each shown result, try every combination of a shortlist of the most promising items per slot, which
+ *      finds improvements that need many slots to change at once,
+ *   6. make a final pass of single swaps, and find the equal-DPS alternatives.
+ *
+ * The steps are split into jobs (see OptimizerJob), so that the independent ones (e.g. refining each weapon) can be
+ * run in parallel. searchStyle() decides which jobs to run.
  */
 export class GearOptimizer {
   private readonly base: Player;
@@ -354,23 +594,51 @@ export class GearOptimizer {
 
   private readonly cache = new Map<string, Score>();
 
-  private prayers: Prayer[] = [];
+  /** Evaluations that bypass the cache (the exhaustive search, which would make it far too big). */
+  private uncachedEvaluations = 0;
+
+  /** The owned and locked items, for looking up the items in a shortlist. */
+  private readonly itemsById: Map<number, EquipmentPiece>;
 
   private family: OptimizerStyle = 'melee';
 
-  private slotCandidates: Partial<Record<keyof PlayerEquipment, EquipmentPiece[]>> = {};
+  private state!: StyleState;
 
-  private spellCandidates: Spell[] = [];
+  private readonly states = new Map<OptimizerStyle, StyleState>();
 
-  constructor(owned: EquipmentPiece[], basePlayer: Player, monster: Monster, opts: OptimizerOpts) {
+  private readonly onEvaluations?: (evaluations: number) => void;
+
+  private lastProgressAt = 0;
+
+  /**
+   * @param onEvaluations - called every so often with the number of DPS calculations performed so far
+   */
+  constructor(
+    owned: EquipmentPiece[],
+    basePlayer: Player,
+    monster: Monster,
+    opts: OptimizerOpts,
+    onEvaluations?: (evaluations: number) => void,
+  ) {
     this.owned = owned;
     this.base = basePlayer;
     this.monster = monster;
     this.opts = opts;
+    this.onEvaluations = onEvaluations;
+    const lockedItems = Object.values(opts.locked || {}).filter((i): i is EquipmentPiece => !!i);
+    this.itemsById = new Map([...owned, ...lockedItems].map((i) => [i.id, i]));
+  }
+
+  private reportProgress() {
+    if (!this.onEvaluations) return;
+    const now = Date.now();
+    if (now - this.lastProgressAt < PROGRESS_INTERVAL_MS) return;
+    this.lastProgressAt = now;
+    this.onEvaluations(this.evaluations);
   }
 
   get evaluations() {
-    return this.cache.size;
+    return this.cache.size + this.uncachedEvaluations;
   }
 
   private get locked(): Partial<PlayerEquipment> {
@@ -381,35 +649,99 @@ export class GearOptimizer {
     return Object.hasOwn(this.locked, slot);
   }
 
-  public run(): OptimizerResult {
-    const result = { evaluations: 0 } as OptimizerResult;
-    for (const style of OPTIMIZER_STYLES) {
-      result[style] = this.optimizeStyle(style);
-    }
-    result.evaluations = this.evaluations;
-    return result;
+  private get hasMinWeight(): boolean {
+    return (this.opts.minWeight || 0) > 0;
   }
 
-  public optimizeStyle(family: OptimizerStyle): OptimizedLoadout[] {
-    this.family = family;
-    this.prayers = this.opts.noPrayers ? [] : getPrayers(family, this.opts.prayerUnlocks);
+  private meetsMinWeight(c: Config): boolean {
+    return meetsMinWeight(c, this.opts);
+  }
 
-    // build the per-slot candidate lists for this style
-    this.slotCandidates = {};
+  public runJob<J extends OptimizerJob>(job: J): OptimizerJobResult<J> {
+    this.useFamily(job.family);
+    switch (job.kind) {
+      case 'plan':
+        return this.plan() as OptimizerJobResult<J>;
+      case 'refine': {
+        const [c, s] = this.refine(job.start);
+        const usable = s.dps > 0 && this.meetsMinWeight(c);
+        return (usable ? [c, s] : null) as OptimizerJobResult<J>;
+      }
+      case 'pairSwap':
+        return this.descendWithPairSwaps(job.start) as OptimizerJobResult<J>;
+      case 'shortlist':
+        return this.shortlist(job.start, job.budget) as OptimizerJobResult<J>;
+      case 'exhaust':
+        return this.exhaust(job.shortlist, job.prefix) as OptimizerJobResult<J>;
+      case 'describe':
+      default:
+        return this.describe(job.start) as OptimizerJobResult<J>;
+    }
+  }
+
+  /**
+   * Switches to searching the given style, building its candidate lists the first time.
+   */
+  private useFamily(family: OptimizerStyle) {
+    this.family = family;
+    const existing = this.states.get(family);
+    if (existing) {
+      this.state = existing;
+      return;
+    }
+
+    // with a minimum weight, a heavier item can be worth keeping even if its stats are worse
+    const withWeight = (stats: number[], item: EquipmentPiece) => (this.hasMinWeight ? [...stats, item.weight || 0] : stats);
+
+    const slotCandidates: StyleState['slotCandidates'] = {};
     for (const slot of ARMOUR_SLOTS) {
       if (this.isLocked(slot)) {
         const lockedItem = this.locked[slot];
-        this.slotCandidates[slot] = lockedItem ? [lockedItem] : [];
+        slotCandidates[slot] = lockedItem ? [lockedItem] : [];
         continue;
       }
       const items = this.owned.filter((i) => i.slot === slot);
-      // ammo is never pruned, as e.g. enchanted bolts have effects that aren't reflected in their stats
-      this.slotCandidates[slot] = slot === 'ammo' ? items : pruneDominated(items, family);
+      // ammo is pruned per weapon (see getAmmoCandidates), as which ammo is comparable depends on the weapon
+      slotCandidates[slot] = slot === 'ammo'
+        ? items
+        : pruneDominated(items, family, (i) => withWeight(relevantStats(i, family), i));
     }
-    this.spellCandidates = family === 'magic' ? this.rankSpells() : [];
 
+    this.state = {
+      prayers: this.opts.noPrayers ? [] : getPrayers(family, this.opts.prayerUnlocks),
+      slotCandidates,
+      // if the weapon doesn't use ammo, its ranged stats and bolt effects don't apply, so most of it can go
+      unusedAmmoCandidates: pruneDominated(
+        slotCandidates.ammo || [],
+        family,
+        (i) => withWeight(unusedAmmoStats(i, family), i),
+      ),
+      ammoCandidatesByWeapon: new Map(),
+      spellCandidates: [],
+    };
+    this.states.set(family, this.state);
+    // ranking the spells needs the rest of the state to be set up
+    this.state.spellCandidates = family === 'magic' ? this.rankSpells() : [];
+  }
+
+  /**
+   * Steps 1 and 2: finds the screening armour, ranks the weapons with it, and returns the configs to refine.
+   */
+  private plan(): PlanResult {
     const weapons = this.getWeaponCandidates();
-    if (weapons.length === 0) return [];
+    const ret: PlanResult = {
+      starts: [],
+      weaponsScreened: weapons.length,
+      candidatesPerSlot: {
+        ...Object.fromEntries(ARMOUR_SLOTS.map((slot) => [slot, this.state.slotCandidates[slot]?.length ?? 0])),
+        // which ammo is tried depends on the weapon, so this is the most tried with any one weapon
+        ammo: Math.max(0, ...weapons.map((w) => this.getSlotOptions('ammo', w).filter((i) => i !== null).length)),
+      },
+      spells: this.state.spellCandidates.length,
+      weaponsRefined: 0,
+      setStarts: 0,
+    };
+    if (weapons.length === 0) return ret;
 
     const empty: Config = {
       equipment: {
@@ -440,7 +772,7 @@ export class GearOptimizer {
         screeningBestScore = s;
       }
     }
-    if (!screeningBest) return [];
+    if (!screeningBest) return ret;
     const screeningArmour = this.descend(screeningBest)[0];
 
     // 2. rank every weapon using the screening armour
@@ -449,22 +781,19 @@ export class GearOptimizer {
       .filter(([, s]) => s.dps > 0)
       .sort(([, a], [, b]) => compareScores(a, b));
 
-    // 3. refine the best few weapons, and try the set seeds
-    const { thorough } = this.opts;
-    const weaponsToRefine = thorough ? THOROUGH_WEAPONS_TO_REFINE : WEAPONS_TO_REFINE;
-    const weaponsForSetSeeds = thorough ? THOROUGH_WEAPONS_FOR_SET_SEEDS : WEAPONS_FOR_SET_SEEDS;
-    const results: [Config, Score][] = [];
-    for (const [i, [c]] of ranked.slice(0, weaponsToRefine).entries()) {
-      results.push(this.descend(c));
+    // the best weapons are refined, both as they are and with the set seeds
+    const starts: Config[] = [];
+    for (const [i, [c]] of ranked.slice(0, WEAPONS_TO_REFINE).entries()) {
+      starts.push(c);
 
-      if (i < weaponsForSetSeeds) {
+      if (i < WEAPONS_FOR_SET_SEEDS) {
         for (const seed of this.getSetSeeds()) {
           if (seed.weapon) continue;
           let seeded = c;
           for (const [slot, item] of Object.entries(seed)) {
             seeded = withSlot(seeded, slot as keyof PlayerEquipment, item ?? null);
           }
-          results.push(this.descend(seeded));
+          starts.push(seeded);
         }
       }
     }
@@ -476,51 +805,173 @@ export class GearOptimizer {
         if (slot === 'weapon') continue;
         seeded = withSlot(seeded, slot as keyof PlayerEquipment, item ?? null);
       }
-      const [c] = this.equipWeapon(seeded, seed.weapon);
-      results.push(this.descend(c));
+      starts.push(this.equipWeapon(seeded, seed.weapon)[0]);
     }
 
-    // keep the best result per weapon (by name, as e.g. poisoned variants are functionally identical)
-    const bestPerWeapon = new Map<string, [Config, Score]>();
-    for (const r of results) {
-      const w = r[0].equipment.weapon;
-      const key = w ? `${w.name}:${w.itemVars?.blowpipeDartName || ''}` : '';
-      const existing = bestPerWeapon.get(key);
-      if (r[1].dps > 0 && (!existing || isBetter(r[1], existing[1]))) {
-        bestPerWeapon.set(key, r);
+    const weaponsRefined = Math.min(ranked.length, WEAPONS_TO_REFINE);
+    return {
+      ...ret, starts, weaponsRefined, setStarts: starts.length - weaponsRefined,
+    };
+  }
+
+  /**
+   * Step 5: picks the items to try in each slot around a result, within the budget for the number of combinations.
+   * Each slot starts with just its current item, and the next item added is always the one (in any slot) that comes
+   * closest to the result's DPS when swapped in alone, so that close calls get more options than clear winners.
+   */
+  private shortlist(start: Config, budget: number): Shortlist {
+    const startScore = this.score(start);
+    const weapon = start.equipment.weapon;
+    const lambda = this.hasMinWeight ? (SHORTLIST_WEIGHT_FRACTION * startScore.dps) / this.opts.minWeight! : 0;
+
+    const queues: { slot: keyof PlayerEquipment, items: (EquipmentPiece | null)[], next: [EquipmentPiece | null, number][] }[] = [];
+    for (const slot of ARMOUR_SLOTS) {
+      const current = start.equipment[slot] ?? null;
+      const next = this.getSlotOptions(slot, weapon)
+        .filter((item) => (item?.id ?? null) !== (current?.id ?? null))
+        .map((item): [EquipmentPiece | null, number] => {
+          const dpsLoss = startScore.dps - this.score(withSlot(start, slot, item)).dps;
+          const weightGain = (item?.weight || 0) - (current?.weight || 0);
+          return [item, dpsLoss - lambda * weightGain];
+        })
+        .sort(([, a], [, b]) => a - b);
+      if (next.length > 0) queues.push({ slot, items: [current], next });
+    }
+
+    let combinations = 1;
+    for (;;) {
+      let pick: typeof queues[number] | undefined;
+      for (const q of queues) {
+        const fits = q.next.length > 0 && (combinations / q.items.length) * (q.items.length + 1) <= budget;
+        if (fits && (!pick || q.next[0][1] < pick.next[0][1])) pick = q;
       }
+      if (!pick) break;
+      combinations = (combinations / pick.items.length) * (pick.items.length + 1);
+      pick.items.push(pick.next.shift()![0]);
     }
 
-    let final = [...bestPerWeapon.values()].sort(([, a], [, b]) => compareScores(a, b));
+    // the slots with the most options go first, so that the jobs can be split on as few slots as possible
+    const used = queues.filter((q) => q.items.length > 1).sort((a, b) => b.items.length - a.items.length);
+    return {
+      start,
+      slots: used.map((q) => q.slot),
+      itemIds: used.map((q) => q.items.map((i) => i?.id ?? null)),
+    };
+  }
 
-    // 4. (thorough only) try two-slot swaps on the best results, to escape set-ups where no single swap helps
-    if (thorough) {
-      final = [
-        ...final.slice(0, THOROUGH_PAIR_SWAP_RESULTS).map(([c]) => this.descendWithPairSwaps(c)),
-        ...final.slice(THOROUGH_PAIR_SWAP_RESULTS),
-      ].sort(([, a], [, b]) => compareScores(a, b));
+  /**
+   * Step 5: tries every combination of the shortlist that starts with the given items (by index) in its first slots.
+   * These evaluations aren't cached, as there are far too many of them and they are never repeated.
+   */
+  private exhaust(shortlist: Shortlist, prefix: number[]): JobResults['exhaust'] {
+    const { start, slots } = shortlist;
+    const options = shortlist.itemIds.map((ids) => ids.map((id) => (id === null ? null : this.itemsById.get(id) ?? null)));
+    const equipment: PlayerEquipment = { ...start.equipment };
+    for (const [i, choice] of prefix.entries()) {
+      equipment[slots[i]] = options[i][choice];
     }
 
-    return final
-      .slice(0, this.opts.resultsPerStyle ?? 5)
-      .map(([c, s]) => ({
+    const ret: JobResults['exhaust'] = { best: null, tried: 0 };
+    const tryFrom = (i: number) => {
+      if (i === slots.length) {
+        if (!meetsMinWeight({ equipment }, this.opts)) return;
+        const c: Config = { ...start, equipment: { ...equipment } };
+        const s = this.evaluate(c);
+        ret.tried += 1;
+        this.uncachedEvaluations += 1;
+        this.reportProgress();
+        if (s.dps > 0 && (!ret.best || isBetter(s, ret.best[1]))) ret.best = [c, s];
+        return;
+      }
+      for (const item of options[i]) {
+        equipment[slots[i]] = item;
+        tryFrom(i + 1);
+      }
+    };
+    tryFrom(prefix.length);
+    return ret;
+  }
+
+  /**
+   * Step 6: makes a final pass of single swaps (and style and spell changes), as the exhaustive search only tries the
+   * shortlisted items, and turns the result into a loadout.
+   */
+  private describe(start: Config): FinishedLoadout {
+    const [c, s] = this.descend(start);
+    return {
+      score: s,
+      loadout: {
         equipment: c.equipment,
         style: c.style,
         spell: c.spell,
-        prayers: this.prayers,
+        prayers: this.state.prayers,
         dps: s.dps,
         maxHit: s.maxHit,
         accuracy: s.accuracy,
-      }));
+        weight: equipmentWeight(c.equipment),
+        alternatives: this.findAlternatives(c, s),
+      },
+    };
   }
 
-  private toPlayer(c: Config): Player {
+  /**
+   * Finds items that give the same DPS as the chosen item in a slot, but have more of an offensive stat. These lose to
+   * the chosen item only on the defensive tiebreak, but may become better once boosts start to wear off.
+   */
+  private findAlternatives(c: Config, s: Score): LoadoutAlternative[] {
+    const weapon = c.equipment.weapon;
+    const ret: LoadoutAlternative[] = [];
+
+    for (const slot of ARMOUR_SLOTS) {
+      if (this.isLocked(slot) || (slot === 'shield' && weapon?.isTwoHanded)) continue;
+      // e.g. a javelin's ranged strength does nothing for a knife, so it would never become better
+      const ignoreRangedStats = slot === 'ammo' && !weaponRequiresAmmo(weapon);
+      const chosen = c.equipment[slot];
+      const chosenStats = offensiveStats(chosen, this.family, ignoreRangedStats);
+
+      for (const item of this.getSlotOptions(slot, weapon)) {
+        if (!item || item.id === chosen?.id) continue;
+        if (!offensiveStats(item, this.family, ignoreRangedStats).some((v, k) => v > chosenStats[k])) continue;
+
+        const candidate = withSlot(c, slot, item);
+        if (!this.meetsMinWeight(candidate)) continue;
+        if (Math.abs(this.score(candidate).dps - s.dps) > EPSILON) continue;
+
+        ret.push({ slot, item, betterAfterDrain: this.findDrainAdvantage(c, candidate) });
+      }
+    }
+
+    // the ones that soonest become better are the most interesting
+    return ret
+      .sort((a, b) => (a.betterAfterDrain?.levels ?? Infinity) - (b.betterAfterDrain?.levels ?? Infinity))
+      .slice(0, MAX_ALTERNATIVES);
+  }
+
+  /**
+   * Drains every boosted level one at a time (as happens over time in game), and returns the first point at which the
+   * alternative config does more DPS than the chosen one.
+   */
+  private findDrainAdvantage(chosen: Config, alternative: Config): LoadoutAlternative['betterAfterDrain'] {
+    const maxBoost = Math.max(0, ...Object.values(this.base.boosts));
+    for (let levels = 1; levels <= maxBoost; levels++) {
+      const boosts = { ...this.base.boosts };
+      for (const k of Object.keys(boosts) as (keyof typeof boosts)[]) {
+        if (boosts[k] > 0) boosts[k] = Math.max(0, boosts[k] - levels);
+      }
+      const base = { ...this.base, boosts };
+      const dpsGain = this.evaluate(alternative, base).dps - this.evaluate(chosen, base).dps;
+      if (dpsGain > EPSILON) return { levels, dpsGain };
+    }
+    return undefined;
+  }
+
+  private toPlayer(c: Config, base: Player = this.base): Player {
     const player: Player = {
-      ...this.base,
+      ...base,
       equipment: c.equipment,
       style: c.style,
       spell: c.spell,
-      prayers: this.prayers,
+      prayers: this.state.prayers,
     };
     return {
       ...player,
@@ -533,9 +984,18 @@ export class GearOptimizer {
     const cached = this.cache.get(key);
     if (cached) return cached;
 
-    let score: Score;
+    const score = this.evaluate(c);
+    this.cache.set(key, score);
+    this.reportProgress();
+    return score;
+  }
+
+  /**
+   * Runs the DPS calculation for the config (uncached), optionally with different levels and boosts.
+   */
+  private evaluate(c: Config, base: Player = this.base): Score {
     try {
-      const player = this.toPlayer(c);
+      const player = this.toPlayer(c, base);
       const calc = new PlayerVsNPCCalc(player, this.monster, {
         loadoutName: 'optimizer',
         disableMonsterScaling: this.monster.id === -1,
@@ -543,18 +1003,15 @@ export class GearOptimizer {
       const dist = calc.getDistribution();
       const defensive = player.defensive.stab + player.defensive.slash + player.defensive.crush
         + player.defensive.magic + player.defensive.ranged;
-      score = {
+      return {
         dps: calc.getDps() || 0,
         maxHit: dist.getMax(),
         accuracy: calc.getDisplayHitChance(),
         tiebreak: defensive + player.bonuses.prayer,
       };
     } catch {
-      score = EMPTY_SCORE;
+      return EMPTY_SCORE;
     }
-
-    this.cache.set(key, score);
-    return score;
   }
 
   /**
@@ -565,7 +1022,7 @@ export class GearOptimizer {
 
     if (this.isLocked('weapon')) {
       const weapon = this.locked.weapon ?? null;
-      return getStyles(weapon, family, this.opts.training).length > 0 ? [weapon] : [];
+      return getStyles(weapon, family, this.opts).length > 0 ? [weapon] : [];
     }
     const ownedWeapons = this.owned.filter((i) => i.slot === 'weapon');
     // poisoned darts share the same name as the regular ones, and only one of each is needed
@@ -575,7 +1032,7 @@ export class GearOptimizer {
 
     const ret: (EquipmentPiece | null)[] = [];
     for (const weapon of ownedWeapons) {
-      const styles = getStyles(weapon, family, this.opts.training);
+      const styles = getStyles(weapon, family, this.opts);
       if (styles.length === 0) continue;
       // a two-handed weapon can't be used if a shield is locked in
       if (weapon.isTwoHanded && this.locked.shield) continue;
@@ -606,9 +1063,15 @@ export class GearOptimizer {
   }
 
   /**
-   * Ranks every spell using no gear, and returns the best few (plus any weapon-specific spells).
+   * Ranks every spell using no gear, and returns the best few (plus any weapon-specific spells). With a fixed spell,
+   * returns just that spell.
    */
   private rankSpells(): Spell[] {
+    if (this.opts.spell) {
+      const spell = spells.find((s) => s.name === this.opts.spell);
+      return spell ? [spell] : [];
+    }
+
     const manualCast = getCombatStylesForCategory(EquipmentCategory.NONE).find((s) => s.stance === 'Manual Cast')!;
     const empty: PlayerEquipment = {
       head: null, cape: null, neck: null, ammo: null, weapon: null, body: null, shield: null, legs: null, hands: null, feet: null, ring: null,
@@ -661,9 +1124,21 @@ export class GearOptimizer {
   }
 
   private getAmmoCandidates(weapon: EquipmentPiece | null): EquipmentPiece[] {
-    const ammo = this.slotCandidates.ammo || [];
+    const ammo = this.state.slotCandidates.ammo || [];
     if (!weaponRequiresAmmo(weapon)) return ammo;
-    return ammo.filter((a) => ammoApplicability(weapon!.id, a.id) === AmmoApplicability.INCLUDED);
+    const key = getCanonicalItemId(weapon!.id);
+    let candidates = this.state.ammoCandidatesByWeapon.get(key);
+    if (!candidates) {
+      // e.g. rune arrows are never better than amethyst arrows, but ammo with effects (enchanted bolts etc) is kept
+      candidates = pruneDominated(
+        ammo.filter((a) => ammoWorksWith(weapon!, a)),
+        this.family,
+        (i) => (this.hasMinWeight ? [...relevantStats(i, this.family), i.weight || 0] : relevantStats(i, this.family)),
+        firedAmmoEffectOf,
+      );
+      this.state.ammoCandidatesByWeapon.set(key, candidates);
+    }
+    return candidates;
   }
 
   /**
@@ -671,8 +1146,8 @@ export class GearOptimizer {
    */
   private pickWeaponSettings(c: Config): [Config, Score] {
     let best: [Config, Score] = [c, EMPTY_SCORE];
-    for (const style of getStyles(c.equipment.weapon, this.family, this.opts.training)) {
-      const spellOptions: (Spell | null)[] = CAST_STANCES.includes(style.stance) ? this.spellCandidates : [null];
+    for (const style of getStyles(c.equipment.weapon, this.family, this.opts)) {
+      const spellOptions: (Spell | null)[] = CAST_STANCES.includes(style.stance) ? this.state.spellCandidates : [null];
       for (const spell of spellOptions) {
         const candidate: Config = { ...c, style, spell };
         const s = this.score(candidate);
@@ -683,11 +1158,80 @@ export class GearOptimizer {
   }
 
   /**
+   * Step 3 for a single start config. With a minimum weight, the descent is also started from a few setups that spread
+   * the weight over the slots in different ways (see descendRelaxed), as reaching the weight with e.g. one very heavy
+   * item gets stuck: no single or pair swap can get rid of it without going under the weight.
+   */
+  private refine(start: Config): [Config, Score] {
+    let best = this.descend(start);
+    if (!this.hasMinWeight) return best;
+
+    const startDps = this.pickWeaponSettings(start)[1].dps;
+    for (const fraction of WEIGHT_TRADE_FRACTIONS) {
+      const r = this.descend(this.descendRelaxed(start, (fraction * startDps) / this.opts.minWeight!));
+      if (this.meetsMinWeight(r[0]) && (!this.meetsMinWeight(best[0]) || isBetter(r[1], best[1]))) {
+        best = r;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Coordinate descent on DPS plus a bonus of `lambda` DPS per kg (up to the minimum weight), ignoring the minimum
+   * weight itself (a Lagrangian relaxation of it). This spreads the weight over the slots where it costs the least DPS,
+   * so the result is a good place to start the constrained descent from.
+   */
+  private descendRelaxed(start: Config, lambda: number): Config {
+    const value = (c: Config, s: Score) => s.dps + lambda * Math.min(equipmentWeight(c.equipment), this.opts.minWeight!);
+
+    let [best, bestScore] = this.pickWeaponSettings(start);
+    let bestValue = value(best, bestScore);
+    for (let pass = 0; pass < MAX_DESCENT_PASSES; pass++) {
+      let improved = false;
+      const weapon = best.equipment.weapon;
+
+      for (const slot of ARMOUR_SLOTS) {
+        if (slot === 'shield' && weapon?.isTwoHanded) continue;
+
+        for (const item of this.getSlotOptions(slot, weapon)) {
+          if ((best.equipment[slot]?.id ?? null) === (item?.id ?? null)) continue;
+          const candidate = withSlot(best, slot, item);
+          const s = this.score(candidate);
+          const v = value(candidate, s);
+          if (v > bestValue + EPSILON || (Math.abs(v - bestValue) <= EPSILON && s.tiebreak > bestScore.tiebreak)) {
+            best = candidate;
+            bestScore = s;
+            bestValue = v;
+            improved = true;
+          }
+        }
+      }
+
+      // the style and spell don't change the weight, so they can be compared on DPS alone
+      const repicked = this.pickWeaponSettings(best);
+      if (isBetter(repicked[1], bestScore)) {
+        [best, bestScore] = repicked;
+        bestValue = value(best, bestScore);
+        improved = true;
+      }
+
+      if (!improved) break;
+    }
+    return best;
+  }
+
+  /**
    * Greedy coordinate descent: repeatedly try every candidate in every armour slot, keeping any swap that improves
-   * the score, until a full pass makes no improvement.
+   * the score (and keeps the setup at the minimum weight), until a full pass makes no improvement. If the start is
+   * under the minimum weight, it is first brought up to it.
    */
   private descend(start: Config): [Config, Score] {
     let [best, bestScore] = this.pickWeaponSettings(start);
+    if (!this.meetsMinWeight(best)) {
+      [best, bestScore] = this.addWeight(best, bestScore);
+      // the setup can't reach the minimum weight with this weapon, so it'll be dropped
+      if (!this.meetsMinWeight(best)) return [best, bestScore];
+    }
 
     for (let pass = 0; pass < MAX_DESCENT_PASSES; pass++) {
       let improved = false;
@@ -699,6 +1243,7 @@ export class GearOptimizer {
         for (const item of this.getSlotOptions(slot, weapon)) {
           if ((best.equipment[slot]?.id ?? null) === (item?.id ?? null)) continue;
           const candidate = withSlot(best, slot, item);
+          if (!this.meetsMinWeight(candidate)) continue;
           const s = this.score(candidate);
           if (isBetter(s, bestScore)) {
             best = candidate;
@@ -722,6 +1267,54 @@ export class GearOptimizer {
   }
 
   /**
+   * Brings the setup up to the minimum weight by swapping one armour slot at a time. If a single swap is enough, the
+   * highest scoring one is used. Otherwise, the swap that loses the least DPS per kg gained is made, and it tries again.
+   */
+  private addWeight(start: Config, startScore: Score): [Config, Score] {
+    let current = start;
+    let currentScore = startScore;
+
+    for (let step = 0; step < MAX_WEIGHT_REPAIR_STEPS && !this.meetsMinWeight(current); step++) {
+      const weapon = current.equipment.weapon;
+      const currentWeight = equipmentWeight(current.equipment);
+      let finished: [Config, Score] | null = null;
+      let partial: { c: Config, s: Score, cost: number, gain: number } | null = null;
+
+      for (const slot of ARMOUR_SLOTS) {
+        if (slot === 'shield' && weapon?.isTwoHanded) continue;
+
+        for (const item of this.getSlotOptions(slot, weapon)) {
+          if ((current.equipment[slot]?.id ?? null) === (item?.id ?? null)) continue;
+          const candidate = withSlot(current, slot, item);
+          const gain = equipmentWeight(candidate.equipment) - currentWeight;
+          if (gain <= WEIGHT_EPSILON) continue;
+
+          const s = this.score(candidate);
+          if (this.meetsMinWeight(candidate)) {
+            if (!finished || isBetter(s, finished[1])) finished = [candidate, s];
+          } else if (!finished) {
+            const cost = (currentScore.dps - s.dps) / gain;
+            const cheaper = !partial || cost < partial.cost - EPSILON
+              || (Math.abs(cost - partial.cost) <= EPSILON && gain > partial.gain);
+            if (cheaper) {
+              partial = {
+                c: candidate, s, cost, gain,
+              };
+            }
+          }
+        }
+      }
+
+      if (finished) return finished;
+      if (!partial) break;
+      current = partial.c;
+      currentScore = partial.s;
+    }
+
+    return [current, currentScore];
+  }
+
+  /**
    * The items that can go in an armour slot (including leaving it empty, unless the weapon needs ammo).
    */
   private getSlotOptions(slot: keyof PlayerEquipment, weapon: EquipmentPiece | null): (EquipmentPiece | null)[] {
@@ -731,8 +1324,10 @@ export class GearOptimizer {
       return weaponRequiresAmmo(weapon) ? this.getAmmoCandidates(weapon) : [this.locked.ammo ?? null];
     }
     if (this.isLocked(slot)) return [this.locked[slot] ?? null];
-    if (slot === 'ammo' && weaponRequiresAmmo(weapon)) return this.getAmmoCandidates(weapon);
-    return [null, ...(this.slotCandidates[slot] || [])];
+    if (slot === 'ammo') {
+      return weaponRequiresAmmo(weapon) ? this.getAmmoCandidates(weapon) : [null, ...this.state.unusedAmmoCandidates];
+    }
+    return [null, ...(this.state.slotCandidates[slot] || [])];
   }
 
   /**
@@ -760,11 +1355,19 @@ export class GearOptimizer {
 
     const topPerSlot = new Map<keyof PlayerEquipment, Array<EquipmentPiece | null>>();
     for (const slot of slots) {
-      const top = this.getSlotOptions(slot, weapon)
+      const options = this.getSlotOptions(slot, weapon);
+      const top = options
         .map((item): [EquipmentPiece | null, Score] => [item, this.score(withSlot(current, slot, item))])
         .sort(([, a], [, b]) => compareScores(a, b))
         .slice(0, PAIR_CANDIDATES_PER_SLOT)
         .map(([item]) => item);
+      if (this.hasMinWeight) {
+        // heavy items make room for a lighter but stronger item in the other slot
+        const heaviest = [...options]
+          .sort((a, b) => (b?.weight || 0) - (a?.weight || 0))
+          .slice(0, PAIR_CANDIDATES_PER_SLOT);
+        top.push(...heaviest.filter((i) => !top.includes(i)));
+      }
       topPerSlot.set(slot, top);
     }
 
@@ -774,6 +1377,7 @@ export class GearOptimizer {
         for (const a of topPerSlot.get(slotA)!) {
           for (const b of topPerSlot.get(slotB)!) {
             const candidate = withSlot(withSlot(current, slotA, a), slotB, b);
+            if (!this.meetsMinWeight(candidate)) continue;
             const s = this.score(candidate);
             if (isBetter(s, found ? found[1] : currentScore)) {
               found = [candidate, s];
@@ -817,7 +1421,118 @@ export class GearOptimizer {
 }
 
 /**
- * Finds the highest-DPS loadouts for each combat style, using only the provided (owned) equipment.
+ * Splits a shortlist's combinations into jobs, by fixing the items in its first few slots. Returns the item indices
+ * for those slots, one list per job (none if there is nothing to try).
+ */
+const splitShortlist = (shortlist: Shortlist): number[][] => {
+  if (shortlist.slots.length === 0) return [];
+  const combinations = shortlist.itemIds.reduce((n, ids) => n * ids.length, 1);
+  const jobs = Math.min(EXHAUSTIVE_CHUNKS_PER_RESULT, Math.ceil(combinations / EXHAUSTIVE_MIN_CHUNK_SIZE));
+
+  let prefixes: number[][] = [[]];
+  for (let i = 0; i < shortlist.slots.length && prefixes.length < jobs; i++) {
+    prefixes = prefixes.flatMap((p) => shortlist.itemIds[i].map((_, k) => [...p, k]));
+  }
+  return prefixes;
+};
+
+/** The result of searching one style. */
+export interface StyleSearchResult {
+  loadouts: OptimizedLoadout[];
+  /** Everything but the evaluations, which are counted by whatever runs the jobs. */
+  summary: Omit<StyleSearchSummary, 'evaluations'>;
+}
+
+/**
+ * The search for a single style, as a generator that yields each batch of jobs that can run in parallel, and receives
+ * their results (in the same order). Returns the final loadouts.
+ */
+export function* searchStyle(
+  family: OptimizerStyle,
+  opts: OptimizerOpts,
+): Generator<OptimizerJob[], StyleSearchResult, unknown[]> {
+  // steps 1 and 2
+  const [plan] = (yield [{ kind: 'plan', family }]) as [PlanResult];
+  const { starts, ...planSummary } = plan;
+
+  // 3. refine the best few weapons, and try the set seeds
+  const refined = (yield starts.map((start): OptimizerJob => ({ kind: 'refine', family, start }))) as (ScoredConfig | null)[];
+
+  // keep the best result per weapon (by name, as e.g. poisoned variants are functionally identical)
+  const bestPerWeapon = new Map<string, ScoredConfig>();
+  for (const r of refined) {
+    if (!r) continue;
+    const w = r[0].equipment.weapon;
+    const key = w ? `${w.name}:${w.itemVars?.blowpipeDartName || ''}` : '';
+    const existing = bestPerWeapon.get(key);
+    if (!existing || isBetter(r[1], existing[1])) {
+      bestPerWeapon.set(key, r);
+    }
+  }
+  const ranked = [...bestPerWeapon.values()].sort(([, a], [, b]) => compareScores(a, b));
+
+  // 4. try two-slot swaps on the best results, to escape set-ups where no single swap helps. These only ever improve a
+  // result, so the shown results are always among these.
+  const resultsPerStyle = opts.resultsPerStyle ?? 5;
+  const swapped = (yield ranked
+    .slice(0, Math.max(resultsPerStyle, PAIR_SWAP_RESULTS))
+    .map(([start]): OptimizerJob => ({ kind: 'pairSwap', family, start }))) as ScoredConfig[];
+  const shown = [...swapped].sort(([, a], [, b]) => compareScores(a, b)).slice(0, resultsPerStyle);
+
+  // 5. try every combination of a shortlist of items per slot around each shown result, which finds improvements that
+  // need many slots to change at once. The best result gets the most of the budget.
+  const budget = opts.exhaustiveBudget ?? EXHAUSTIVE_BUDGET;
+  const shortlists = (yield shown.map(([start], i): OptimizerJob => ({
+    kind: 'shortlist', family, start, budget: i === 0 ? budget : Math.round(budget * EXHAUSTIVE_OTHERS_FRACTION),
+  }))) as Shortlist[];
+  const exhaustJobs: OptimizerJob[] = [];
+  const exhaustJobResult: number[] = [];
+  for (const [i, shortlist] of shortlists.entries()) {
+    for (const prefix of splitShortlist(shortlist)) {
+      exhaustJobs.push({
+        kind: 'exhaust', family, shortlist, prefix,
+      });
+      exhaustJobResult.push(i);
+    }
+  }
+  const exhausted = (yield exhaustJobs) as JobResults['exhaust'][];
+  const improved = [...shown];
+  let exhaustiveCombinations = 0;
+  for (const [j, { best, tried }] of exhausted.entries()) {
+    exhaustiveCombinations += tried;
+    const i = exhaustJobResult[j];
+    if (best && isBetter(best[1], improved[i][1])) improved[i] = best;
+  }
+
+  // 6. a final pass of single swaps, and the alternatives
+  const finished = (yield improved.map(([start]): OptimizerJob => ({ kind: 'describe', family, start }))) as FinishedLoadout[];
+
+  return {
+    loadouts: finished
+      .sort((a, b) => compareScores(a.score, b.score))
+      .slice(0, resultsPerStyle)
+      .map((f) => f.loadout),
+    summary: {
+      ...planSummary,
+      pairSwapped: swapped.length,
+      exhaustiveCombinations,
+      exhaustiveImprovements: improved.filter((r, i) => r !== shown[i]).length,
+    },
+  };
+}
+
+/** A job's result, and how many DPS calculations it took. */
+export interface JobOutcome {
+  result: unknown;
+  evaluations: number;
+}
+
+const addEvaluations = (counts: StyleSearchSummary['evaluations'], job: OptimizerJob, evaluations: number) => {
+  counts[job.kind] = (counts[job.kind] ?? 0) + evaluations;
+};
+
+/**
+ * Finds the highest-DPS loadouts for each combat style, using only the provided (owned) equipment, on this thread.
  * @see GearOptimizer
  */
 export const optimizeGear = (
@@ -825,4 +1540,66 @@ export const optimizeGear = (
   basePlayer: Player,
   monster: Monster,
   opts: OptimizerOpts,
-): OptimizerResult => new GearOptimizer(owned, basePlayer, monster, opts).run();
+  onProgress?: OptimizerProgressCallback,
+): OptimizerResult => {
+  let stylesDone = 0;
+  const optimizer = new GearOptimizer(owned, basePlayer, monster, opts, (evaluations) => onProgress?.({ evaluations, stylesDone }));
+
+  const result = {
+    melee: [], ranged: [], magic: [], evaluations: 0, summary: {},
+  } as OptimizerResult;
+  for (const style of searchedStyles(opts)) {
+    const evaluations: StyleSearchSummary['evaluations'] = {};
+    const search = searchStyle(style, opts);
+    let step = search.next();
+    while (!step.done) {
+      step = search.next(step.value.map((job) => {
+        const before = optimizer.evaluations;
+        const r = optimizer.runJob(job);
+        addEvaluations(evaluations, job, optimizer.evaluations - before);
+        return r;
+      }));
+    }
+    result[style] = step.value.loadouts;
+    result.summary[style] = { ...step.value.summary, evaluations };
+    stylesDone += 1;
+    onProgress?.({ evaluations: optimizer.evaluations, stylesDone });
+  }
+  result.evaluations = optimizer.evaluations;
+  return result;
+};
+
+/**
+ * Finds the highest-DPS loadouts for each combat style, like optimizeGear, but runs the jobs with the given function,
+ * which may run them in parallel (e.g. on a pool of workers each with their own GearOptimizer). All styles are
+ * searched at the same time.
+ * @param runJob - runs the job on a GearOptimizer created with the same inputs, and returns its result
+ * @param onStyleDone - called as each style finishes
+ */
+export const optimizeGearWith = async (
+  opts: OptimizerOpts,
+  runJob: (job: OptimizerJob) => Promise<JobOutcome>,
+  onStyleDone?: (style: OptimizerStyle) => void,
+): Promise<Omit<OptimizerResult, 'evaluations'>> => {
+  const result: Omit<OptimizerResult, 'evaluations'> = {
+    melee: [], ranged: [], magic: [], summary: {},
+  };
+  await Promise.all(searchedStyles(opts).map(async (style) => {
+    const evaluations: StyleSearchSummary['evaluations'] = {};
+    const search = searchStyle(style, opts);
+    let step = search.next();
+    while (!step.done) {
+      // eslint-disable-next-line no-await-in-loop
+      const outcomes = await Promise.all(step.value.map(async (job) => {
+        const outcome = await runJob(job);
+        addEvaluations(evaluations, job, outcome.evaluations);
+        return outcome.result;
+      }));
+      step = search.next(outcomes);
+    }
+    result[style] = step.value.loadouts;
+    result.summary[style] = { ...step.value.summary, evaluations };
+    onStyleDone?.(style);
+  }));
+  return result;
+};

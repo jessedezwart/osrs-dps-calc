@@ -245,12 +245,12 @@ export const ammoApplicability = (weaponId?: number, ammoId?: number): AmmoAppli
  * Returns the canonical (base) item ID for a given item ID. This is useful if there are variants of each item.
  * @param itemId
  */
-export const getCanonicalItemId = (itemId: number): number => {
-  for (const [k, v] of Object.entries(equipmentAliases)) {
-    if (v.includes(itemId)) return parseInt(k);
-  }
-  return itemId;
-};
+const canonicalIdByVariant = new Map<number, number>(
+  Object.entries(equipmentAliases).flatMap(([k, v]) => v.map((variant): [number, number] => [variant, parseInt(k)])),
+);
+const equipmentById = new Map(availableEquipment.map((e) => [e.id, e]));
+
+export const getCanonicalItemId = (itemId: number): number => canonicalIdByVariant.get(itemId) ?? itemId;
 
 export const getCanonicalItem = (equipmentPiece: EquipmentPiece): EquipmentPiece => {
   const canonicalId = getCanonicalItemId(equipmentPiece.id);
@@ -258,7 +258,7 @@ export const getCanonicalItem = (equipmentPiece: EquipmentPiece): EquipmentPiece
     return equipmentPiece;
   }
 
-  const canonicalItem = availableEquipment.find((e) => e.id === canonicalId);
+  const canonicalItem = equipmentById.get(canonicalId);
   if (!canonicalItem) {
     return equipmentPiece;
   }

@@ -2520,10 +2520,12 @@ export default class PlayerVsNPCCalc extends BaseCalc {
   }
 
   private isSunspearFinisher(): boolean {
+    // check the cheap conditions first, as the max hit isn't memoized
+    if (!this.opts.usingSpecialAttack || !this.wearing('Sunspear')) {
+      return false;
+    }
     const [, max] = this.getMinAndMax();
-    return this.wearing('Sunspear')
-      && this.opts.usingSpecialAttack
-      && this.monster.inputs.monsterCurrentHp <= Math.trunc(max * 7 / 10);
+    return this.monster.inputs.monsterCurrentHp <= Math.trunc(max * 7 / 10);
   }
 
   private getGlyphicAttenuationFactor(): Factor {

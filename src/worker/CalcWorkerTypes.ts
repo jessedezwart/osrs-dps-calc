@@ -5,7 +5,9 @@ import { CalcOpts } from '@/lib/BaseCalc';
 import {
   CompareResult, CompareXAxis, CompareYAxis,
 } from '@/lib/Comparator';
-import { OptimizerOpts, OptimizerResult } from '@/lib/GearOptimizer';
+import {
+  OptimizerJob, OptimizerOpts, OptimizerProgress, OptimizerResult,
+} from '@/lib/GearOptimizer';
 
 /**
  * Requests
@@ -122,6 +124,22 @@ export interface OptimizeGearResponse extends WorkerResponse<WorkerRequestType.O
   payload: OptimizerResult,
 }
 
+/**
+ * Sent by the worker while a long-running request (currently only gear optimization) is still in progress.
+ */
+export interface WorkerProgressMessage<T extends WorkerRequestType> {
+  type: T,
+  sequenceId: number,
+  progress: unknown,
+}
+
+export interface OptimizeGearProgressMessage extends WorkerProgressMessage<WorkerRequestType.OPTIMIZE_GEAR> {
+  progress: OptimizerProgress,
+}
+
+export type CalcProgressUnion = OptimizeGearProgressMessage;
+export type CalcProgress<T extends WorkerRequestType> = Extract<CalcProgressUnion, { type: T }>['progress'];
+
 export type CalcResponsesUnion =
   ComputeBasicResponse |
   ComputeReverseResponse |
@@ -132,3 +150,15 @@ export type CalcResponsesUnion =
 export type CalcResponse<T extends WorkerRequestType> = CalcResponsesUnion & { type: T };
 
 export type Handler<T extends WorkerRequestType> = (data: Extract<CalcRequestsUnion, { type: T }>['data'], rawRequest: CalcRequestsUnion) => Promise<CalcResponse<T>['payload']>;
+
+/**
+ * Messages between the calc worker and the gear optimizer workers it runs in parallel (see OptimizerPool).
+ */
+export type OptimizerWorkerRequest =
+  | { type: 'init', data: OptimizeGearRequest['data'] }
+  | { type: 'job', id: number, job: OptimizerJob };
+
+export type OptimizerWorkerResponse =
+  | { type: 'progress', evaluations: number }
+  | { type: 'result', id: number, result: unknown, evaluations: number }
+  | { type: 'error', id: number, error: string };

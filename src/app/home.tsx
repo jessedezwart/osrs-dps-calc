@@ -14,6 +14,7 @@ import InitialLoad from '@/app/components/InitialLoad';
 import LoadoutComparison from '@/app/components/results/LoadoutComparison';
 import TtkComparison from '@/app/components/results/TtkComparison';
 import GearOptimizer from '@/app/components/results/GearOptimizer';
+import BankGearOverview from '@/app/components/results/BankGearOverview';
 import ShareModal from '@/app/components/ShareModal';
 import DebugPanels from '@/app/components/results/DebugPanels';
 import { IconAlertTriangle } from '@tabler/icons-react';
@@ -126,6 +127,7 @@ const Home: NextPage = observer(() => {
         <CalcProvider>
           <GearOptimizer />
         </CalcProvider>
+        <BankGearOverview />
         <CalcProvider>
           <LoadoutComparison />
         </CalcProvider>

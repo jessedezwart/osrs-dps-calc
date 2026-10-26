@@ -23,6 +23,10 @@ export const DEFAULT_TRANSFORM_OPTS: TransformOpts = {
   transformInaccurate: true,
 };
 
+// each hitsplat takes 11 bits of a numeric hash (10 for damage, 1 for accuracy), so 4 fit in 53 bits
+const HASH_DAMAGE_RANGE = 1024;
+const HASH_MAX_NUMERIC_SPLATS = 4;
+
 export class Hitsplat {
   public static INACCURATE: Hitsplat = new Hitsplat(0, false);
 
@@ -95,15 +99,24 @@ export class WeightedHit {
     return this.probability * this.getSum();
   }
 
-  public getHash(): bigint {
-    let acc = 0n;
-    for (const hitsplat of this.hitsplats) {
-      acc <<= 8n;
-      acc |= BigInt(hitsplat.damage);
-      acc <<= 1n;
-      acc |= (hitsplat.accurate ? 1n : 0n);
+  /**
+   * A key that is equal for hits with the same hitsplats. This is a plain number (which is much faster than a bigint
+   * or string) when it fits in a double's 53 bit integer range, which is the case for all but the longest multi-hits.
+   */
+  public getHash(): number | string {
+    if (this.hitsplats.length <= HASH_MAX_NUMERIC_SPLATS) {
+      let acc = 0;
+      let fits = true;
+      for (const hitsplat of this.hitsplats) {
+        if (!Number.isInteger(hitsplat.damage) || hitsplat.damage < 0 || hitsplat.damage >= HASH_DAMAGE_RANGE) {
+          fits = false;
+          break;
+        }
+        acc = acc * HASH_DAMAGE_RANGE * 2 + hitsplat.damage * 2 + (hitsplat.accurate ? 1 : 0);
+      }
+      if (fits) return acc;
     }
-    return acc;
+    return this.hitsplats.map((h) => `${h.damage}${h.accurate ? 'a' : 'i'}`).join(',');
   }
 
   toString(): string {
@@ -164,8 +177,8 @@ export class HitDistribution {
    * Merges the probabilities of hits with identical damage values
    */
   public flatten(): HitDistribution {
-    const acc = new Map<bigint, number>();
-    const hitLists = new Map<bigint, Hitsplat[]>();
+    const acc = new Map<number | string, number>();
+    const hitLists = new Map<number | string, Hitsplat[]>();
     for (const hit of this.hits) {
       const hash = hit.getHash();
       const prev = acc.get(hash);
