@@ -7,6 +7,7 @@ import { Spell, spells } from '@/types/Spell';
 import { Prayer } from '@/enums/Prayer';
 import { EquipmentCategory } from '@/enums/EquipmentCategory';
 import PlayerVsNPCCalc from '@/lib/PlayerVsNPCCalc';
+import NPCVsPlayerCalc from '@/lib/NPCVsPlayerCalc';
 import {
   AmmoApplicability,
   ammoApplicability,
@@ -91,6 +92,10 @@ export interface OptimizedLoadout {
   accuracy: number;
   /** The total weight of the equipment, in kg. */
   weight: number;
+  /** The average damage the monster deals to you per second (0 if it has no attack style). */
+  npcDps: number;
+  /** The average damage taken per kill, or undefined if the monster can't be killed. */
+  avgDmgTaken?: number;
   /**
    * Items that give exactly the same DPS in a slot, but trade the chosen item's defensive stats for more offensive
    * stats that don't currently make a difference (e.g. +1 strength that doesn't reach the next max hit).
@@ -918,9 +923,26 @@ export class GearOptimizer {
         maxHit: s.maxHit,
         accuracy: s.accuracy,
         weight: equipmentWeight(c.equipment),
+        ...this.damageTaken(c),
         alternatives: this.findAlternatives(c, s),
       },
     };
+  }
+
+  /**
+   * The damage the monster deals to the player in this config. Only done for the finished loadouts, as the search
+   * itself doesn't take it into account.
+   */
+  private damageTaken(c: Config): Pick<OptimizedLoadout, 'npcDps' | 'avgDmgTaken'> {
+    try {
+      const calc = new NPCVsPlayerCalc(this.toPlayer(c), this.monster, {
+        loadoutName: 'optimizer',
+        disableMonsterScaling: this.monster.id === -1,
+      });
+      return { npcDps: calc.getDps() || 0, avgDmgTaken: calc.getAverageDamageTaken() };
+    } catch {
+      return { npcDps: 0 };
+    }
   }
 
   /**

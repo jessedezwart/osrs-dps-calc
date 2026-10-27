@@ -37,6 +37,18 @@ describe('optimizeGear', () => {
     expect(best.dps).toBeGreaterThan(0);
   });
 
+  test('includes the damage taken from the monster', () => {
+    // Abyssal whip, Rune platebody
+    const result = optimizeGear(owned([4151, 1127]), player, monster, opts);
+    const best = result.melee[0];
+    expect(best.npcDps).toBeGreaterThan(0);
+    expect(best.avgDmgTaken).toBeGreaterThan(0);
+    // the rune platebody only adds defence, so wearing it should mean taking less damage
+    const withoutBody = optimizeGear(owned([4151]), player, monster, opts).melee[0];
+    expect(best.equipment.body?.name).toBe('Rune platebody');
+    expect(best.npcDps).toBeLessThan(withoutBody.npcDps);
+  });
+
   test('finds multi-piece set bonuses such as void', () => {
     const bank = owned([
       4151, // Abyssal whip

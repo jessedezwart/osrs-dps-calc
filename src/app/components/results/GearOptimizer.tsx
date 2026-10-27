@@ -240,6 +240,14 @@ const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateL
       <td className="px-2 py-1 text-right font-bold">{loadout.dps.toFixed(3)}</td>
       <td className="px-2 py-1 text-right">{loadout.maxHit}</td>
       <td className="px-2 py-1 text-right">{`${(loadout.accuracy * 100).toFixed(2)}%`}</td>
+      <td className="px-2 py-1 text-right whitespace-nowrap">
+        {loadout.npcDps > 0 ? (
+          <>
+            <div>{loadout.avgDmgTaken !== undefined ? loadout.avgDmgTaken.toFixed(1) : '-----'}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-300">{`${loadout.npcDps.toFixed(3)}/s`}</div>
+          </>
+        ) : '-----'}
+      </td>
       <td className="px-2 py-1 text-right whitespace-nowrap">{`${loadout.weight.toFixed(1)} kg`}</td>
       <td className="px-2 py-1">
         <div className="flex gap-1 justify-end">
@@ -1006,6 +1014,13 @@ const GearOptimizer: React.FC = observer(() => {
                             <th className="px-2 text-right">DPS</th>
                             <th className="px-2 text-right">Max hit</th>
                             <th className="px-2 text-right">Accuracy</th>
+                            <th
+                              className="px-2 text-right whitespace-nowrap cursor-help underline decoration-dotted"
+                              data-tooltip-id="tooltip"
+                              data-tooltip-content="The average damage you take from the monster per kill, and per second below it. The search doesn't take it into account."
+                            >
+                              Dmg taken
+                            </th>
                             <th className="px-2 text-right">Weight</th>
                             <th className="px-2"><span className="sr-only">Actions</span></th>
                           </tr>
