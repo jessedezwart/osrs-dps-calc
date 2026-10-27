@@ -74,18 +74,22 @@ const SPELL_OPTIONS: { label: string, value: string | undefined }[] = [
   ...ALL_SPELLS.map((sp) => ({ label: sp.name, value: sp.name })),
 ];
 
-const weaponLabel = (l: OptimizedLoadout) => {
-  const w = l.equipment.weapon;
-  if (!w) return 'Unarmed';
-  const dart = w.itemVars?.blowpipeDartName;
-  return dart ? `${w.name} (${dart})` : w.name;
-};
-
-const attackLabel = (l: OptimizedLoadout) => {
-  const parts = [`${l.style.name} (${l.style.stance})`];
-  if (l.style.type === 'ranged' && l.equipment.ammo) parts.push(l.equipment.ammo.name);
-  return parts.join(' · ');
-};
+/** A button to stop the search from loading this ammo (or blowpipe dart). */
+const IgnoreAmmoButton: React.FC<{ name: string, size: number }> = observer(({ name, size }) => {
+  const store = useStore();
+  return (
+    <button
+      type="button"
+      className="text-gray-500 dark:text-gray-300 hover:text-red transition-colors"
+      onClick={() => store.toggleIgnoredAmmo(name)}
+      aria-label={`Ignore ${name}`}
+      data-tooltip-id="tooltip"
+      data-tooltip-content={`Don't load ${name} in future searches (other weapons and ammo are still used)`}
+    >
+      <IconX size={size} />
+    </button>
+  );
+});
 
 // magic damage is stored in tenths of a percent
 const STAT_LABELS: [string, (i: EquipmentPiece) => number][] = [
@@ -129,7 +133,14 @@ const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateL
       <td className="px-2 py-1 text-gray-500 dark:text-gray-300">{rank}</td>
       <td className="px-2 py-1">
         <div className="font-bold flex items-center gap-1">
-          {weaponLabel(loadout)}
+          {loadout.equipment.weapon ? loadout.equipment.weapon.name : 'Unarmed'}
+          {loadout.equipment.weapon?.itemVars?.blowpipeDartName && (
+            <span className="flex items-center gap-0.5 font-normal">
+              {`(${loadout.equipment.weapon.itemVars.blowpipeDartName}`}
+              <IgnoreAmmoButton name={loadout.equipment.weapon.itemVars.blowpipeDartName} size={12} />
+              )
+            </span>
+          )}
           {loadout.equipment.weapon && (
             <button
               type="button"
@@ -144,7 +155,14 @@ const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateL
           )}
         </div>
         <div className="text-xs text-gray-500 dark:text-gray-300 flex flex-wrap items-center gap-x-1">
-          {attackLabel(loadout)}
+          {`${loadout.style.name} (${loadout.style.stance})`}
+          {loadout.style.type === 'ranged' && loadout.equipment.ammo && (
+            <>
+              {' · '}
+              <span>{loadout.equipment.ammo.name}</span>
+              <IgnoreAmmoButton name={loadout.equipment.ammo.name} size={12} />
+            </>
+          )}
           {loadout.spell && (
             <>
               {' · '}
@@ -324,6 +342,54 @@ const ExcludedItems: React.FC<{ owned: EquipmentPiece[] }> = observer(({ owned }
             type="button"
             className="form-control text-xs ml-1"
             onClick={() => store.setExcludedItemIds([])}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+    </div>
+  );
+});
+
+/**
+ * The ammo (and blowpipe darts) that the search should never load.
+ */
+const IgnoredAmmo: React.FC = observer(() => {
+  const store = useStore();
+  const { ignoredAmmo } = store;
+
+  return (
+    <div className="my-3">
+      <div className="font-bold mb-1">Ignored ammo</div>
+      <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
+        Ammo and blowpipe darts the search will never load, e.g. ones that are too expensive to burn. Click the × next to
+        the ammo or dart of a result to ignore it. Unlike excluding an item, ignored darts can still be thrown, and the
+        weapons that fired them still use other ammo.
+      </p>
+      {ignoredAmmo.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          {ignoredAmmo.map((name) => (
+            <span
+              key={name}
+              className="flex items-center gap-1 pl-1 pr-0.5 py-0.5 rounded bg-body-100 dark:bg-dark-400 text-xs"
+            >
+              {name}
+              <button
+                type="button"
+                className="text-gray-500 hover:text-red transition-colors"
+                onClick={() => store.toggleIgnoredAmmo(name)}
+                aria-label={`Stop ignoring ${name}`}
+                data-tooltip-id="tooltip"
+                data-tooltip-content="Stop ignoring this ammo"
+              >
+                <IconX size={14} />
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            className="form-control text-xs ml-1"
+            onClick={() => store.setIgnoredAmmo([])}
           >
             Clear all
           </button>
@@ -695,7 +761,7 @@ const GearOptimizer: React.FC = observer(() => {
   // used to tell whether the results are out of date
   const inputsKey = JSON.stringify([
     toJS(monster), toJS(player.skills), toJS(player.boosts), toJS(player.buffs), owned.map((o) => o.id), prayerUnlocks, usePrayers, locked, training ?? null,
-    castSpell ? null : toJS(store.excludedSpells), minWeight, searchStyles, castSpell ?? null,
+    castSpell ? null : toJS(store.excludedSpells), minWeight, searchStyles, castSpell ?? null, toJS(store.ignoredAmmo),
   ]);
 
   const toggleStyle = (style: OptimizerStyle) => setStyles(styles.includes(style)
@@ -721,6 +787,7 @@ const GearOptimizer: React.FC = observer(() => {
           locked,
           training,
           excludedSpells: toJS(store.excludedSpells),
+          ignoredAmmo: toJS(store.ignoredAmmo),
           spell: castSpell,
           minWeight,
           styles: searchStyles,
@@ -869,6 +936,7 @@ const GearOptimizer: React.FC = observer(() => {
             </div>
             <SlotLocks equipment={player.equipment} lockedSlots={lockedSlots} setLockedSlots={setLockedSlots} />
             <ExcludedItems owned={ownedAll} />
+            {searchStyles.includes('ranged') && <IgnoredAmmo />}
             {searchStyles.includes('magic') && (
               <div className="my-3 max-w-sm">
                 <div className="font-bold mb-1">Spell</div>

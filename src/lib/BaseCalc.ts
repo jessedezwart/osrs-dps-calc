@@ -551,6 +551,8 @@ export default class BaseCalc {
         'Seeking broad arrows',
       ])
       && this.player.style.type === 'ranged'
+      // only if it's fired, e.g. not with a blowpipe or knives
+      && ammoApplicability(this.player.equipment.weapon?.id, this.player.equipment.ammo?.id) === AmmoApplicability.INCLUDED
     ) {
       return true;
     }

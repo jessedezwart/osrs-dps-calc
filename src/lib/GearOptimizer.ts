@@ -63,6 +63,11 @@ export interface OptimizerOpts {
   /** Names of spells that should never be used (e.g. because their runes are too expensive). */
   excludedSpells?: string[];
   /**
+   * Names of ammo that should never go in the ammo slot, and of darts that should never be loaded into a blowpipe.
+   * Unlike excluded items, ignored darts can still be thrown. A locked ammo slot still uses its item.
+   */
+  ignoredAmmo?: string[];
+  /**
    * The name of the only spell to cast with magic. Powered staves can then only manually cast it (their built-in spell
    * isn't used), and excludedSpells is ignored.
    */
@@ -649,6 +654,10 @@ export class GearOptimizer {
     return Object.hasOwn(this.locked, slot);
   }
 
+  private isIgnoredAmmo(item: EquipmentPiece): boolean {
+    return (this.opts.ignoredAmmo || []).includes(item.name);
+  }
+
   private get hasMinWeight(): boolean {
     return (this.opts.minWeight || 0) > 0;
   }
@@ -700,7 +709,7 @@ export class GearOptimizer {
         slotCandidates[slot] = lockedItem ? [lockedItem] : [];
         continue;
       }
-      const items = this.owned.filter((i) => i.slot === slot);
+      const items = this.owned.filter((i) => i.slot === slot && !(slot === 'ammo' && this.isIgnoredAmmo(i)));
       // ammo is pruned per weapon (see getAmmoCandidates), as which ammo is comparable depends on the weapon
       slotCandidates[slot] = slot === 'ammo'
         ? items
@@ -897,7 +906,7 @@ export class GearOptimizer {
    * shortlisted items, and turns the result into a loadout.
    */
   private describe(start: Config): FinishedLoadout {
-    const [c, s] = this.descend(start);
+    const [c, s] = this.dropUnusedAmmo(...this.descend(start));
     return {
       score: s,
       loadout: {
@@ -912,6 +921,21 @@ export class GearOptimizer {
         alternatives: this.findAlternatives(c, s),
       },
     };
+  }
+
+  /**
+   * Empties the ammo slot if the weapon doesn't fire the ammo and it does nothing there, e.g. arrows left over from a
+   * bow that was swapped for a blowpipe. It's only kept if it changes the DPS (e.g. Fareed needs an arrow), or has
+   * defensive or prayer bonuses (e.g. a blessing).
+   */
+  private dropUnusedAmmo(c: Config, s: Score): [Config, Score] {
+    const ammo = c.equipment.ammo;
+    if (!ammo || this.isLocked('ammo') || weaponRequiresAmmo(c.equipment.weapon) || tiebreakStat(ammo) > 0) return [c, s];
+
+    const without = withSlot(c, 'ammo', null);
+    if (!this.meetsMinWeight(without)) return [c, s];
+    const withoutScore = this.score(without);
+    return withoutScore.dps < s.dps - EPSILON ? [c, s] : [without, withoutScore];
   }
 
   /**
@@ -1027,7 +1051,7 @@ export class GearOptimizer {
     const ownedWeapons = this.owned.filter((i) => i.slot === 'weapon');
     // poisoned darts share the same name as the regular ones, and only one of each is needed
     const darts = [...new Map(ownedWeapons
-      .filter((i) => DART_TIER[i.name] !== undefined)
+      .filter((i) => DART_TIER[i.name] !== undefined && !this.isIgnoredAmmo(i))
       .map((i) => [i.name, i])).values()];
 
     const ret: (EquipmentPiece | null)[] = [];

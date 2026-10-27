@@ -240,6 +240,36 @@ describe('optimizeGear', () => {
       expect(best.dps).toBeGreaterThan(0);
       expect(best.equipment.ammo?.name).toMatch(/arrow$/);
     });
+
+    test('never loads ignored ammo, but still uses the weapon that fired it', () => {
+      // Magic shortbow, Adamant arrow, Rune arrow
+      const result = optimizeGear(owned([861, 890, 892]), player, monster, { ...opts, ignoredAmmo: ['Rune arrow'] });
+      const bow = result.ranged.find((l) => l.equipment.weapon?.name === 'Magic shortbow')!;
+      expect(bow.equipment.ammo?.name).toBe('Adamant arrow');
+    });
+
+    test('never loads ignored darts into a blowpipe, but can still throw them', () => {
+      // Toxic blowpipe, Mithril dart, Rune dart
+      const result = optimizeGear(owned([12926, 809, 811]), player, monster, { ...opts, ignoredAmmo: ['Rune dart'] });
+      const loads = result.ranged
+        .filter((l) => l.equipment.weapon?.itemVars?.blowpipeDartName)
+        .map((l) => l.equipment.weapon!.itemVars!.blowpipeDartName);
+      expect(loads).toEqual(['Mithril dart']);
+      expect(result.ranged.some((l) => l.equipment.weapon?.name === 'Rune dart')).toBe(true);
+    });
+
+    test('leaves the slot empty if the arrow does nothing', () => {
+      // Rune knife, Magic shortbow, Rune arrow
+      const result = optimizeGear(owned([876, 861, 892]), player, monster, opts);
+      const knife = result.ranged.find((l) => l.equipment.weapon?.name === 'Rune knife')!;
+      expect(knife.equipment.ammo).toBeNull();
+      // the bow still fires them
+      const bow = result.ranged.find((l) => l.equipment.weapon?.name === 'Magic shortbow')!;
+      expect(bow.equipment.ammo?.name).toBe('Rune arrow');
+      for (const l of [...result.melee, ...result.magic]) {
+        expect(l.equipment.ammo).toBeNull();
+      }
+    });
   });
 
   test('gives the same results when the jobs are spread over separate optimizers', async () => {

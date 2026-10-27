@@ -59,6 +59,7 @@ export interface BankData {
 const BANK_STORAGE_KEY = 'dps-calc-bank';
 const EXCLUDED_ITEMS_STORAGE_KEY = 'dps-calc-excluded-items';
 const EXCLUDED_SPELLS_STORAGE_KEY = 'dps-calc-excluded-spells';
+const IGNORED_AMMO_STORAGE_KEY = 'dps-calc-ignored-ammo';
 
 const EMPTY_CALC_LOADOUT = {} as CalculatedLoadout;
 
@@ -241,6 +242,12 @@ class GlobalState implements State {
    * Names of spells that the gear optimizer should never use, e.g. because their runes are too expensive.
    */
   excludedSpells: string[] = [];
+
+  /**
+   * Names of ammo (and blowpipe darts) that the gear optimizer should never load, e.g. because they're too expensive to
+   * burn. Unlike excluded items, ignored darts can still be thrown.
+   */
+  ignoredAmmo: string[] = [];
 
   ui: UI = {
     showPreferencesModal: false,
@@ -590,6 +597,24 @@ class GlobalState implements State {
     }).catch((e) => {
       console.error(e);
     });
+    localforage.getItem(IGNORED_AMMO_STORAGE_KEY).then((v) => {
+      if (Array.isArray(v)) this.ignoredAmmo = v as string[];
+    }).catch((e) => {
+      console.error(e);
+    });
+  }
+
+  setIgnoredAmmo(names: string[]) {
+    this.ignoredAmmo = [...new Set(names)];
+    localforage.setItem(IGNORED_AMMO_STORAGE_KEY, toJS(this.ignoredAmmo)).catch((e) => {
+      console.error(e);
+    });
+  }
+
+  toggleIgnoredAmmo(name: string) {
+    this.setIgnoredAmmo(this.ignoredAmmo.includes(name)
+      ? this.ignoredAmmo.filter((n) => n !== name)
+      : [...this.ignoredAmmo, name]);
   }
 
   setExcludedSpells(names: string[]) {
