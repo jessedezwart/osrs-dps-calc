@@ -4,11 +4,11 @@ import { useStore } from '@/state';
 import localforage from 'localforage';
 
 interface IUsernameLookupProps {
-  /** Whether the levels are filled in for the current loadout (the default), or the gear optimizer. */
-  target?: 'loadout' | 'optimizer';
+  /** Looks up the levels. Defaults to filling them in for the current loadout. */
+  onLookup?: () => Promise<void>;
 }
 
-const UsernameLookup: React.FC<IUsernameLookupProps> = observer(({ target }) => {
+const UsernameLookup: React.FC<IUsernameLookupProps> = observer(({ onLookup }) => {
   const store = useStore();
   const username = store.ui.username || '';
   const shouldRemember = store.prefs.rememberUsername;
@@ -42,7 +42,7 @@ const UsernameLookup: React.FC<IUsernameLookupProps> = observer(({ target }) => 
         className="ml-1 text-sm btn"
         onClick={async () => {
           setBtnDisabled(true);
-          await store.fetchCurrentPlayerSkills(target);
+          await (onLookup ?? store.fetchCurrentPlayerSkills)();
           setBtnDisabled(false);
         }}
       >

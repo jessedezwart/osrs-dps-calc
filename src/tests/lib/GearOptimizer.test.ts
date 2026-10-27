@@ -2,7 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import {
   AMMO_STACK, equipmentWeight, GearOptimizer, getPrayers, keptItemsCount, optimizeGear, optimizeGearWith, OPTIMIZER_STYLES,
   OptimizedLoadout, OptimizerProgress, pruneDominated, riskOf, toggleSearchPrayer, TrainingSkill,
-} from '@/lib/GearOptimizer';
+} from '@/lib/optimizer';
 import { Prayer } from '@/enums/Prayer';
 import { CombatStyleStance } from '@/types/PlayerCombatStyle';
 import { resolveOwnedEquipment } from '@/lib/BankImport';

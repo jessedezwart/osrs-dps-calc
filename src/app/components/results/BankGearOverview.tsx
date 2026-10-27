@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
-import { useStore } from '@/state';
+import { useOptimizer } from '@/optimizerState';
 import SectionAccordion from '@/app/components/generic/SectionAccordion';
 import LazyImage from '@/app/components/generic/LazyImage';
 import equipmentStats from '@/public/img/Equipment Stats.png';
@@ -86,8 +86,8 @@ const bestAttack = (i: EquipmentPiece) => Math.max(
  * An overview of all the equipment in the imported bank, with its stats, filterable by slot and sortable by any stat.
  */
 const BankGearOverview: React.FC = observer(() => {
-  const store = useStore();
-  const { bank, excludedItemIds } = store;
+  const optimizer = useOptimizer();
+  const { bank, excludedItemIds } = optimizer;
 
   const [slot, setSlot] = useState<keyof PlayerEquipment | 'all'>('all');
   const [search, setSearch] = useState('');

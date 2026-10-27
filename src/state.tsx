@@ -39,30 +39,14 @@ import {
 } from '@/lib/constants';
 import { EquipmentCategory } from './enums/EquipmentCategory';
 import {
+  ARM_PRAYERS,
+  BRAIN_PRAYERS,
   DEFENSIVE_PRAYERS,
   OFFENSIVE_PRAYERS,
+  OVERHEAD_PRAYERS,
   Prayer,
-  prayersConflict,
 } from './enums/Prayer';
 import Potion from './enums/Potion';
-import { BankItem } from './lib/BankImport';
-import { fetchPrices, idsToFetch, PriceCache } from './lib/ItemPrices';
-import {
-  OPTIMIZER_STYLES, OptimizedLoadout, OptimizerStyle, toggleSearchPrayer, TrainingSkill,
-} from './lib/GearOptimizer';
-
-export interface BankData {
-  items: BankItem[];
-  fileName: string;
-  importedAt: number;
-}
-
-const BANK_STORAGE_KEY = 'dps-calc-bank';
-const EXCLUDED_ITEMS_STORAGE_KEY = 'dps-calc-excluded-items';
-const EXCLUDED_SPELLS_STORAGE_KEY = 'dps-calc-excluded-spells';
-const IGNORED_AMMO_STORAGE_KEY = 'dps-calc-ignored-ammo';
-const OPTIMIZER_SETTINGS_STORAGE_KEY = 'dps-calc-optimizer-settings';
-const ITEM_PRICES_STORAGE_KEY = 'dps-calc-item-prices';
 
 const EMPTY_CALC_LOADOUT = {} as CalculatedLoadout;
 
@@ -153,117 +137,25 @@ export const generateEmptyPlayer = (name?: string): Player => ({
   spell: null,
 });
 
-/**
- * The boosts the potions give, using the highest boost of any of them for each skill. Hitpoints are never boosted, as
- * the current HP is set by hand.
- */
-export const calculatePotionBoosts = (skills: PlayerSkills, potions: Potion[]): Partial<PlayerSkills> => {
-  const boosts: Partial<PlayerSkills> = {
-    atk: 0, def: 0, magic: 0, prayer: 0, ranged: 0, str: 0, mining: 0, herblore: 0, farming: 0,
-  };
-
-  for (const p of potions) {
-    const result = PotionMap[p].calculateFn(skills);
-    for (const k of Object.keys(result)) {
-      const r = result[k as keyof typeof result] as number;
-      if (r > boosts[k as keyof typeof boosts]!) {
-        // If this skill's boost is higher than what it already is, then change it
-        boosts[k as keyof typeof boosts] = r;
-      }
-    }
-  }
-
-  return boosts;
-};
-
-/**
- * The inputs of the gear optimizer ("Find Best Gear"). These are separate from the loadouts, which are for comparing
- * gear sets, and are saved in the browser.
- */
-export interface OptimizerSettings {
-  skills: PlayerSkills;
-  /** The potion boosts, plus the difference between the current and base HP. */
-  boosts: PlayerSkills;
-  /** The potions and the extra options (on slayer task etc.) */
-  buffs: Player['buffs'];
-  /** The prayers to use. Each style uses the ones for it, and the ones that aren't for a specific style. */
-  prayers: Prayer[];
-  /** Slots that are fixed to an item (or to being empty, if null). */
-  locked: Partial<PlayerEquipment>;
-  styles: OptimizerStyle[];
-  training?: TrainingSkill;
-  /** The only spell to cast with magic. */
-  spell?: string;
-  minWeight: number;
-  wilderness: WildernessSettings;
-}
-
-/** Wilderness mode limits how much the gear optimizer's setups risk losing on death. */
-export interface WildernessSettings {
-  enabled: boolean;
-  /** The most a setup may lose on death, in gp. */
-  maxRisk: number;
-  /** Whether Protect Item is used, which keeps one more item. */
-  protectItem: boolean;
-  /** Whether the player is skulled, which keeps 3 fewer items. */
-  skulled: boolean;
-  /** Never use untradeable items (which count as free, but may be lost or need repairing), unless they're locked. */
-  skipUntradeables: boolean;
-}
-
-/** A change to the gear optimizer's settings. The skills, boosts and buffs are merged in, the rest is replaced. */
-export type OptimizerSettingsUpdate = Partial<Omit<OptimizerSettings, 'skills' | 'boosts' | 'buffs'>> & {
-  skills?: Partial<PlayerSkills>;
-  boosts?: Partial<PlayerSkills>;
-  buffs?: Partial<Player['buffs']>;
-};
-
-const generateOptimizerSettings = (): OptimizerSettings => {
-  const { skills, boosts, buffs } = generateEmptyPlayer();
-  return {
-    skills,
-    boosts,
-    buffs,
-    prayers: [],
-    locked: {},
-    styles: OPTIMIZER_STYLES,
-    minWeight: 0,
-    wilderness: {
-      enabled: false,
-      maxRisk: 100_000,
-      protectItem: false,
-      skulled: false,
-      skipUntradeables: false,
-    },
-  };
-};
-
-/**
- * Reloads the most current data for a stored item using its ID, to ensure we're not using stale data. Returns null if
- * the item seems to no longer exist.
- */
-const refreshEquipmentPiece = (v: PartialDeep<EquipmentPiece>): EquipmentPiece | null => {
-  let item: EquipmentPiece | undefined;
-  if (Object.hasOwn(v, 'id')) {
-    item = availableEquipment.find((eq) => eq.id === v.id);
-    if (item) {
-      // include the hidden itemVars inputs that are not present on the availableEquipment store
-      if (Object.hasOwn(v, 'itemVars')) {
-        item = { ...item, itemVars: v.itemVars as EquipmentPiece['itemVars'] };
-      }
-    } else {
-      console.warn(`[refreshEquipmentPiece] No item found for item ID ${v.id}`);
-    }
-  }
-  return item || null;
-};
-
 export const parseLoadoutsFromImportedData = (data: ImportableData) => data.loadouts.map((loadout, i) => {
+  // For each item, reload the most current data using the item ID to ensure we're not using stale data.
   if (loadout.equipment) {
     for (const [k, v] of Object.entries(loadout.equipment)) {
       if (v === null) continue;
-      // This will remove the item entirely if it seems to no longer exist.
-      loadout.equipment[k as keyof typeof loadout.equipment] = refreshEquipmentPiece(v);
+      let item: EquipmentPiece | undefined;
+      if (Object.hasOwn(v, 'id')) {
+        item = availableEquipment.find((eq) => eq.id === v.id);
+        if (item) {
+          // include the hidden itemVars inputs that are not present on the availableEquipment store
+          if (Object.hasOwn(v, 'itemVars')) {
+            item = { ...item, itemVars: v.itemVars };
+          }
+        } else {
+          console.warn(`[parseLoadoutsFromImportedData] No item found for item ID ${v.id}`);
+        }
+      }
+      // The following line will remove the item entirely if it seems to no longer exist.
+      loadout.equipment[k as keyof typeof loadout.equipment] = item || null;
     }
   }
 
@@ -327,35 +219,6 @@ class GlobalState implements State {
 
   selectedLoadout = 0;
 
-  /**
-   * The user's imported bank, used by the gear optimizer. Stored separately from the importable data so that it is
-   * never included in share links.
-   */
-  bank: BankData | null = null;
-
-  /**
-   * Item IDs (canonical) that the gear optimizer should never use. Kept separately from the bank, so that the list
-   * survives re-importing an updated bank.
-   */
-  excludedItemIds: number[] = [];
-
-  /**
-   * Names of spells that the gear optimizer should never use, e.g. because their runes are too expensive.
-   */
-  excludedSpells: string[] = [];
-
-  /**
-   * Names of ammo (and blowpipe darts) that the gear optimizer should never load, e.g. because they're too expensive to
-   * burn. Unlike excluded items, ignored darts can still be thrown.
-   */
-  ignoredAmmo: string[] = [];
-
-  /** The inputs of the gear optimizer, separate from the loadouts. */
-  optimizerSettings: OptimizerSettings = generateOptimizerSettings();
-
-  /** Cached GE prices by item ID, for the gear optimizer's wilderness mode. */
-  itemPrices: PriceCache = {};
-
   ui: UI = {
     showPreferencesModal: false,
     showShareModal: false,
@@ -408,7 +271,22 @@ class GlobalState implements State {
 
     const recomputeBoosts = () => {
       // Re-compute the player's boost values.
-      this.updatePlayer({ boosts: calculatePotionBoosts(this.player.skills, this.player.buffs.potions) });
+      const boosts: Partial<PlayerSkills> = {
+        atk: 0, def: 0, magic: 0, prayer: 0, ranged: 0, str: 0, mining: 0, herblore: 0, farming: 0,
+      };
+
+      for (const p of this.player.buffs.potions) {
+        const result = PotionMap[p].calculateFn(this.player.skills);
+        for (const k of Object.keys(result)) {
+          const r = result[k as keyof typeof result] as number;
+          if (r > boosts[k as keyof typeof boosts]!) {
+            // If this skill's boost is higher than what it already is, then change it
+            boosts[k as keyof typeof boosts] = result[k as keyof typeof result] as number;
+          }
+        }
+      }
+
+      this.updatePlayer({ boosts });
     };
 
     const potionTriggers: ((r: IReactionPublic) => unknown)[] = [
@@ -677,225 +555,7 @@ class GlobalState implements State {
     });
   }
 
-  loadBank() {
-    localforage.getItem(BANK_STORAGE_KEY).then((v) => {
-      if (v) this.bank = v as BankData;
-    }).catch((e) => {
-      console.error(e);
-    });
-    localforage.getItem(EXCLUDED_ITEMS_STORAGE_KEY).then((v) => {
-      if (Array.isArray(v)) this.excludedItemIds = v as number[];
-    }).catch((e) => {
-      console.error(e);
-    });
-    localforage.getItem(EXCLUDED_SPELLS_STORAGE_KEY).then((v) => {
-      if (Array.isArray(v)) this.excludedSpells = v as string[];
-    }).catch((e) => {
-      console.error(e);
-    });
-    localforage.getItem(IGNORED_AMMO_STORAGE_KEY).then((v) => {
-      if (Array.isArray(v)) this.ignoredAmmo = v as string[];
-    }).catch((e) => {
-      console.error(e);
-    });
-    localforage.getItem(ITEM_PRICES_STORAGE_KEY).then((v) => {
-      if (v) this.itemPrices = v as PriceCache;
-    }).catch((e) => {
-      console.error(e);
-    });
-    localforage.getItem(OPTIMIZER_SETTINGS_STORAGE_KEY).then((v) => {
-      if (!v) return;
-      const { locked, wilderness, ...settings } = v as OptimizerSettingsUpdate;
-      // reload the locked items' data, and drop the locks of items that no longer exist
-      const refreshedLocks: Partial<PlayerEquipment> = {};
-      for (const [slot, item] of Object.entries(locked || {})) {
-        const refreshed = item && refreshEquipmentPiece(item);
-        if (!item || refreshed) refreshedLocks[slot as keyof PlayerEquipment] = refreshed;
-      }
-      // start from the defaults, so that settings added since they were saved get their default value
-      this.optimizerSettings = generateOptimizerSettings();
-      this.updateOptimizerSettings({
-        ...settings,
-        locked: refreshedLocks,
-        wilderness: { ...this.optimizerSettings.wilderness, ...wilderness },
-      });
-    }).catch((e) => {
-      console.error(e);
-    });
-  }
-
-  /**
-   * Changes the gear optimizer's settings, and saves them. The potion boosts are recomputed if the levels or potions
-   * change.
-   */
-  updateOptimizerSettings(update: OptimizerSettingsUpdate) {
-    const current = this.optimizerSettings;
-    const next: OptimizerSettings = {
-      ...current,
-      ...update,
-      skills: { ...current.skills, ...update.skills },
-      boosts: { ...current.boosts, ...update.boosts },
-      buffs: { ...current.buffs, ...update.buffs },
-    };
-    if (update.skills || update.buffs?.potions) {
-      next.boosts = { ...next.boosts, ...calculatePotionBoosts(next.skills, next.buffs.potions) };
-    }
-    this.optimizerSettings = next;
-
-    localforage.setItem(OPTIMIZER_SETTINGS_STORAGE_KEY, toJS(this.optimizerSettings)).catch((e) => {
-      console.error(e);
-    });
-  }
-
-  toggleOptimizerPotion(potion: Potion) {
-    const { potions } = this.optimizerSettings.buffs;
-    this.updateOptimizerSettings({
-      buffs: { potions: potions.includes(potion) ? potions.filter((p) => p !== potion) : [...potions, potion] },
-    });
-  }
-
-  toggleOptimizerPrayer(prayer: Prayer) {
-    this.updateOptimizerSettings({ prayers: toggleSearchPrayer(this.optimizerSettings.prayers, prayer) });
-  }
-
-  /**
-   * Locks a slot of the gear optimizer to an item (or to being empty, if null), or unlocks it if undefined.
-   */
-  setOptimizerLock(slot: keyof PlayerEquipment, item: EquipmentPiece | null | undefined) {
-    const locked = { ...this.optimizerSettings.locked };
-    if (item === undefined) {
-      delete locked[slot];
-    } else {
-      locked[slot] = item;
-    }
-    // a two-handed weapon can't be worn with a shield, so locking one unlocks the other
-    if (slot === 'weapon' && item?.isTwoHanded && locked.shield) delete locked.shield;
-    if (slot === 'shield' && item && locked.weapon?.isTwoHanded) delete locked.weapon;
-    this.updateOptimizerSettings({ locked });
-  }
-
-  /**
-   * The player that the gear optimizer searches with: the optimizer's levels, boosts and extra options, with no gear.
-   */
-  get optimizerBasePlayer(): Player {
-    const {
-      skills, boosts, buffs, wilderness,
-    } = this.optimizerSettings;
-    return {
-      ...generateEmptyPlayer(),
-      skills: toJS(skills),
-      boosts: toJS(boosts),
-      // wilderness weapons (Craw's bow etc.) only get their bonus in the Wilderness
-      buffs: { ...toJS(buffs), inWilderness: buffs.inWilderness || wilderness.enabled },
-    };
-  }
-
-  /**
-   * Makes sure the prices of these items are cached, requesting the ones that aren't (or that have expired).
-   * @param refresh - request all of them, even if they're cached
-   * @throws Error if a request fails
-   */
-  async loadItemPrices(ids: number[], refresh = false) {
-    const missing = refresh ? ids : idsToFetch(ids, this.itemPrices);
-    if (missing.length === 0) return;
-    this.addItemPrices(await fetchPrices(missing));
-  }
-
-  addItemPrices(prices: PriceCache) {
-    this.itemPrices = { ...this.itemPrices, ...prices };
-    localforage.setItem(ITEM_PRICES_STORAGE_KEY, toJS(this.itemPrices)).catch((e) => {
-      console.error(e);
-    });
-  }
-
-  setIgnoredAmmo(names: string[]) {
-    this.ignoredAmmo = [...new Set(names)];
-    localforage.setItem(IGNORED_AMMO_STORAGE_KEY, toJS(this.ignoredAmmo)).catch((e) => {
-      console.error(e);
-    });
-  }
-
-  toggleIgnoredAmmo(name: string) {
-    this.setIgnoredAmmo(this.ignoredAmmo.includes(name)
-      ? this.ignoredAmmo.filter((n) => n !== name)
-      : [...this.ignoredAmmo, name]);
-  }
-
-  setExcludedSpells(names: string[]) {
-    this.excludedSpells = [...new Set(names)];
-    localforage.setItem(EXCLUDED_SPELLS_STORAGE_KEY, toJS(this.excludedSpells)).catch((e) => {
-      console.error(e);
-    });
-  }
-
-  toggleExcludedSpell(name: string) {
-    this.setExcludedSpells(this.excludedSpells.includes(name)
-      ? this.excludedSpells.filter((s) => s !== name)
-      : [...this.excludedSpells, name]);
-  }
-
-  setExcludedItemIds(ids: number[]) {
-    this.excludedItemIds = [...new Set(ids)];
-    localforage.setItem(EXCLUDED_ITEMS_STORAGE_KEY, toJS(this.excludedItemIds)).catch((e) => {
-      console.error(e);
-    });
-  }
-
-  toggleExcludedItem(id: number) {
-    this.setExcludedItemIds(this.excludedItemIds.includes(id)
-      ? this.excludedItemIds.filter((i) => i !== id)
-      : [...this.excludedItemIds, id]);
-  }
-
-  setBank(items: BankItem[], fileName: string) {
-    this.bank = { items, fileName, importedAt: Date.now() };
-    localforage.setItem(BANK_STORAGE_KEY, toJS(this.bank)).catch((e) => {
-      console.error(e);
-    });
-  }
-
-  clearBank() {
-    this.bank = null;
-    localforage.removeItem(BANK_STORAGE_KEY).catch((e) => {
-      console.error(e);
-    });
-  }
-
-  /**
-   * Applies a loadout found by the gear optimizer, replacing all equipment, the combat style, spell and prayers, and
-   * the levels, potions and extra options it was found with, so that the loadout gets the same DPS.
-   * @param result the optimizer result
-   * @param asNewLoadout whether to create a new loadout for it (if possible), rather than overwriting the current one
-   * @param base the levels, boosts and buffs the optimizer searched with
-   */
-  applyOptimizedLoadout(result: OptimizedLoadout, asNewLoadout: boolean, base: Pick<Player, 'skills' | 'boosts' | 'buffs'>) {
-    if (asNewLoadout && this.canCreateLoadout) {
-      this.createLoadout(true, this.selectedLoadout);
-    }
-
-    // Clear everything first, so that no properties (such as blowpipe darts) are merged in from the old items
-    this.updatePlayer({ equipment: generateInitialEquipment() });
-    this.updatePlayer({
-      equipment: result.equipment,
-      style: result.style,
-      spell: result.spell,
-      skills: base.skills,
-      buffs: base.buffs,
-    });
-    // the potions are replaced rather than merged by index, and the boosts include the current HP (which the potions
-    // don't set)
-    this.player.buffs.potions = [...base.buffs.potions];
-    this.updatePlayer({ boosts: base.boosts });
-
-    // Piety, Rigour and Augury are also defensive prayers, so clear both groups to avoid conflicts
-    const prayers = this.player.prayers.filter((p) => !OFFENSIVE_PRAYERS.includes(p) && !DEFENSIVE_PRAYERS.includes(p));
-    this.player.prayers = [...prayers, ...result.prayers];
-  }
-
-  /**
-   * Looks up the levels of the entered username, for the current loadout or the gear optimizer.
-   */
-  async fetchCurrentPlayerSkills(target: 'loadout' | 'optimizer' = 'loadout') {
+  async fetchCurrentPlayerSkills() {
     const { username } = this.ui;
 
     try {
@@ -911,11 +571,7 @@ class GlobalState implements State {
         },
       );
 
-      if (res && target === 'optimizer') {
-        this.updateOptimizerSettings({ skills: res });
-      } else if (res) {
-        this.updatePlayer({ skills: res });
-      }
+      if (res) this.updatePlayer({ skills: res });
     } catch (e) {
       console.error(e);
     }
@@ -962,8 +618,28 @@ class GlobalState implements State {
       // If we're toggling off an existing prayer, just filter it out from the array
       this.player.prayers = this.player.prayers.filter((p) => p !== prayer);
     } else {
-      // If we're toggling on a new prayer, disable the prayers that cannot be enabled alongside it
-      this.player.prayers = [...this.player.prayers.filter((p) => !prayersConflict(p, prayer)), prayer];
+      // If we're toggling on a new prayer, let's do some checks to ensure that some prayers cannot be enabled alongside it
+      let newPrayers = [...this.player.prayers];
+
+      // If this is a defensive prayer, disable all other defensive prayers
+      if (DEFENSIVE_PRAYERS.includes(prayer)) newPrayers = newPrayers.filter((p) => !DEFENSIVE_PRAYERS.includes(p));
+
+      // If this is an overhead prayer, disable all other overhead prayers
+      if (OVERHEAD_PRAYERS.includes(prayer)) newPrayers = newPrayers.filter((p) => !OVERHEAD_PRAYERS.includes(p));
+
+      // If this is an offensive prayer...
+      if (OFFENSIVE_PRAYERS.includes(prayer)) {
+        newPrayers = newPrayers.filter((p) => {
+          // If this is a "brain" prayer, it can only be paired with arm prayers
+          if (BRAIN_PRAYERS.includes(prayer)) return !OFFENSIVE_PRAYERS.includes(p) || ARM_PRAYERS.includes(p);
+          // If this is an "arm" prayer, it can only be paired with brain prayers
+          if (ARM_PRAYERS.includes(prayer)) return !OFFENSIVE_PRAYERS.includes(p) || BRAIN_PRAYERS.includes(p);
+          // Otherwise, there are no offensive prayers it can be paired with, disable them all
+          return !OFFENSIVE_PRAYERS.includes(p);
+        });
+      }
+
+      this.player.prayers = [...newPrayers, prayer];
     }
   }
 

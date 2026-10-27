@@ -1,7 +1,7 @@
 import {
   OptimizeGearRequest, OptimizerWorkerRequest, OptimizerWorkerResponse,
 } from '@/worker/CalcWorkerTypes';
-import { JobOutcome, OptimizerJob } from '@/lib/GearOptimizer';
+import { JobOutcome, OptimizerJob } from '@/lib/optimizer';
 import { DeferredPromise, WORKER_JSON_REPLACER, WORKER_JSON_REVIVER } from '@/utils';
 
 interface QueuedJob {

@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-globals */
 import { OptimizerWorkerRequest, OptimizerWorkerResponse } from '@/worker/CalcWorkerTypes';
-import { GearOptimizer } from '@/lib/GearOptimizer';
+import { GearOptimizer } from '@/lib/optimizer';
 import { WORKER_JSON_REPLACER, WORKER_JSON_REVIVER } from '@/utils';
 
 /**

@@ -16,7 +16,7 @@ import { ttkDist } from '@/worker/ttkWorker';
 import { range } from 'd3-array';
 import { DeferredPromise, WORKER_JSON_REPLACER, WORKER_JSON_REVIVER } from '@/utils';
 import { NUMBER_OF_LOADOUTS } from '@/lib/constants';
-import { optimizeGear, optimizeGearWith, OptimizerResult } from '@/lib/GearOptimizer';
+import { optimizeGear, optimizeGearWith, OptimizerResult } from '@/lib/optimizer';
 import OptimizerPool from '@/worker/OptimizerPool';
 
 const computePvMValues: Handler<WorkerRequestType.COMPUTE_BASIC> = async (data) => {

@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { IconCheck, IconCopy, IconFileUpload } from '@tabler/icons-react';
 import { toast } from 'react-toastify';
-import { useStore } from '@/state';
+import { useOptimizer } from '@/optimizerState';
 import { parseBankCsv, resolveOwnedEquipment } from '@/lib/BankImport';
 
 /** Where the Dude Where's My Stuff RuneLite plugin saves its exports (one folder per account). */
@@ -18,14 +18,14 @@ type ShowOpenFilePicker = (opts: {
  * Imports a bank export CSV (ID,Name,Quantity) for use with the gear optimizer.
  */
 const BankImportButton: React.FC = observer(() => {
-  const store = useStore();
+  const optimizer = useOptimizer();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const importFile = async (file: File) => {
     try {
       const items = parseBankCsv(await file.text());
       const equippable = resolveOwnedEquipment(items);
-      store.setBank(items, file.name);
+      optimizer.setBank(items, file.name);
       toast.success(`Imported ${items.length} bank items (${equippable.length} usable equipment). Click "Find best gear" to search them.`, { toastId: 'bank-import' });
     } catch (err) {
       console.error(err);
@@ -76,8 +76,8 @@ const BankImportButton: React.FC = observer(() => {
         onClick={openPicker}
         className="text-body-500 dark:text-dark-100 hover:text-green transition-colors"
         data-tooltip-id="tooltip"
-        data-tooltip-content={store.bank
-          ? `Bank loaded (${store.bank.fileName}). Click to import a different bank CSV`
+        data-tooltip-content={optimizer.bank
+          ? `Bank loaded (${optimizer.bank.fileName}). Click to import a different bank CSV`
           : `Import bank CSV (ID,Name,Quantity). Dude Where's My Stuff saves them in ${BANK_EXPORT_DIR}`}
       >
         <IconFileUpload aria-label="Import bank CSV" />

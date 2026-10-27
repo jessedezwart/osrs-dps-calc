@@ -7,7 +7,7 @@ import {
 } from '@/lib/Comparator';
 import {
   OptimizerJob, OptimizerOpts, OptimizerProgress, OptimizerResult,
-} from '@/lib/GearOptimizer';
+} from '@/lib/optimizer';
 
 /**
  * Requests

@@ -25,8 +25,8 @@ interface ISkillsAndBoostsProps {
   potions: Potion[];
   onChange: (change: SkillChange) => void;
   togglePotion: (potion: Potion) => void;
-  /** Whether the username lookup fills these levels in, or the current loadout's. */
-  lookupTarget?: 'loadout' | 'optimizer';
+  /** Looks up the levels of the entered username. Defaults to filling them in for the current loadout. */
+  onLookup?: () => Promise<void>;
   /** Shown after the username lookup, e.g. another way to import levels. */
   lookupExtra?: React.ReactNode;
 }
@@ -35,14 +35,14 @@ interface ISkillsAndBoostsProps {
  * The levels and potions of a player, for a loadout or the gear optimizer.
  */
 export const SkillsAndBoosts: React.FC<ISkillsAndBoostsProps> = observer(({
-  skills, boosts, potions, onChange, togglePotion, lookupTarget, lookupExtra,
+  skills, boosts, potions, onChange, togglePotion, onLookup, lookupExtra,
 }) => {
   const skillProps = { skills, boosts, onChange };
 
   return (
     <div className="px-4 mt-4 flex flex-col mb-6 grow">
       <div className="flex items-center gap-1">
-        <UsernameLookup target={lookupTarget} />
+        <UsernameLookup onLookup={onLookup} />
         {lookupExtra}
       </div>
       <div className="mt-4">

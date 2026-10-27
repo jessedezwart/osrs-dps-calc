@@ -2,74 +2,32 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { toJS } from 'mobx';
 import { toast } from 'react-toastify';
-import {
-  IconAlertTriangle, IconLock, IconRefresh, IconShieldCheckFilled, IconTrash, IconX,
-} from '@tabler/icons-react';
+import { IconTrash } from '@tabler/icons-react';
 import { useStore } from '@/state';
+import { useOptimizer } from '@/optimizerState';
 import { useCalc } from '@/worker/CalcWorker';
 import { OptimizeGearRequest, WorkerRequestType } from '@/worker/CalcWorkerTypes';
 import SectionAccordion from '@/app/components/generic/SectionAccordion';
 import Toggle from '@/app/components/generic/Toggle';
 import Select from '@/app/components/generic/Select';
-import Combobox from '@/app/components/generic/Combobox';
 import NumberInput from '@/app/components/generic/NumberInput';
 import LazyImage from '@/app/components/generic/LazyImage';
 import Spinner from '@/app/components/Spinner';
 import equipmentStats from '@/public/img/Equipment Stats.png';
-import headSlot from '@/public/img/slots/head.png';
-import capeSlot from '@/public/img/slots/cape.png';
-import neckSlot from '@/public/img/slots/neck.png';
-import ammoSlot from '@/public/img/slots/ammo.png';
-import weaponSlot from '@/public/img/slots/weapon.png';
-import bodySlot from '@/public/img/slots/body.png';
-import shieldSlot from '@/public/img/slots/shield.png';
-import legsSlot from '@/public/img/slots/legs.png';
-import handsSlot from '@/public/img/slots/hands.png';
-import feetSlot from '@/public/img/slots/feet.png';
-import ringSlot from '@/public/img/slots/ring.png';
-import { resolveEquipment, resolveOwnedEquipment } from '@/lib/BankImport';
+import { resolveOwnedEquipment } from '@/lib/BankImport';
 import {
-  keptItemsCount, LoadoutAlternative, OPTIMIZER_STYLES, OptimizedLoadout, OptimizerJob, OptimizerProgress, OptimizerResult,
-  OptimizerStyle, StyleSearchSummary, TrainingSkill, searchedStyles,
-} from '@/lib/GearOptimizer';
-import {
-  formatGp, itemValue, parseGp, priceIdsFor,
-} from '@/lib/ItemPrices';
-import {
-  EquipmentPiece, Player, PlayerEquipment, PlayerSkills,
-} from '@/types/Player';
-import { getCdnImage, getWikiImage, isDefined } from '@/utils';
-import { spells } from '@/types/Spell';
+  keptItemsCount, OPTIMIZER_STYLES, OptimizerProgress, OptimizerResult, OptimizerStyle, TrainingSkill, searchedStyles,
+} from '@/lib/optimizer';
+import { itemValue, priceIdsFor } from '@/lib/ItemPrices';
+import { isDefined } from '@/utils';
 import { PrayerMap } from '@/enums/Prayer';
-import PlayerTab from '@/app/components/player/PlayerTab';
-import { SkillsAndBoosts } from '@/app/components/player/Skills';
-import { PrayerGrid } from '@/app/components/player/Prayers';
-import { ExtraOptionsList } from '@/app/components/player/ExtraOptions';
-import EquipmentSelect from '@/app/components/player/equipment/EquipmentSelect';
-import WikiSyncButton from '@/app/components/player/WikiSyncButton';
 import BankImportButton, { BankExportDirCopy } from '@/app/components/player/BankImportButton';
-import skillsTab from '@/public/img/tabs/skills.png';
-import equipmentTab from '@/public/img/tabs/equipment.png';
-import optionsTab from '@/public/img/tabs/options.webp';
-import prayerTab from '@/public/img/tabs/prayer.png';
-
-const DISPLAY_SLOTS: (keyof PlayerEquipment)[] = [
-  'head', 'cape', 'neck', 'ammo', 'weapon', 'body', 'shield', 'legs', 'hands', 'feet', 'ring',
-];
-
-const SLOT_PLACEHOLDERS: { [k in keyof PlayerEquipment]: string } = {
-  head: headSlot.src,
-  cape: capeSlot.src,
-  neck: neckSlot.src,
-  ammo: ammoSlot.src,
-  weapon: weaponSlot.src,
-  body: bodySlot.src,
-  shield: shieldSlot.src,
-  legs: legsSlot.src,
-  hands: handsSlot.src,
-  feet: feetSlot.src,
-  ring: ringSlot.src,
-};
+import { ALL_SPELLS, STYLE_LABELS } from './optimizer/constants';
+import LoadoutRow, { SearchBase } from './optimizer/LoadoutRow';
+import { ExcludedItems, ExcludedSpells, IgnoredAmmo } from './optimizer/Exclusions';
+import SearchSummary from './optimizer/SearchSummary';
+import PlayerSettings from './optimizer/PlayerSettings';
+import WildernessOptions from './optimizer/WildernessOptions';
 
 const TRAINING_OPTIONS: { label: string, value: TrainingSkill | undefined }[] = [
   { label: 'Any stance (highest DPS)', value: undefined },
@@ -79,921 +37,23 @@ const TRAINING_OPTIONS: { label: string, value: TrainingSkill | undefined }[] = 
   { label: 'Shared (Controlled)', value: 'shared' },
 ];
 
-const STYLE_LABELS: { [k in OptimizerStyle]: string } = {
-  melee: 'Melee',
-  ranged: 'Ranged',
-  magic: 'Magic',
-};
-
-/** Every spell once (some are listed for multiple spellbooks), by name. */
-const ALL_SPELLS = [...new Map(spells.map((sp) => [sp.name, sp])).values()].sort((a, b) => a.name.localeCompare(b.name));
-
 const SPELL_OPTIONS: { label: string, value: string | undefined }[] = [
   { label: 'Any spell (highest DPS)', value: undefined },
   ...ALL_SPELLS.map((sp) => ({ label: sp.name, value: sp.name })),
 ];
 
-/** A button to stop the search from loading this ammo (or blowpipe dart). */
-const IgnoreAmmoButton: React.FC<{ name: string, size: number }> = observer(({ name, size }) => {
-  const store = useStore();
-  return (
-    <button
-      type="button"
-      className="text-gray-500 dark:text-gray-300 hover:text-red transition-colors"
-      onClick={() => store.toggleIgnoredAmmo(name)}
-      aria-label={`Ignore ${name}`}
-      data-tooltip-id="tooltip"
-      data-tooltip-content={`Don't load ${name} in future searches (other weapons and ammo are still used)`}
-    >
-      <IconX size={size} />
-    </button>
-  );
-});
-
-// magic damage is stored in tenths of a percent
-const STAT_LABELS: [string, (i: EquipmentPiece) => number][] = [
-  ['stab', (i) => i.offensive.stab],
-  ['slash', (i) => i.offensive.slash],
-  ['crush', (i) => i.offensive.crush],
-  ['str', (i) => i.bonuses.str],
-  ['ranged', (i) => i.offensive.ranged],
-  ['ranged str', (i) => i.bonuses.ranged_str],
-  ['magic', (i) => i.offensive.magic],
-  ['% magic dmg', (i) => i.bonuses.magic_str / 10],
-  ['def', (i) => i.defensive.stab + i.defensive.slash + i.defensive.crush + i.defensive.magic + i.defensive.ranged],
-  ['prayer', (i) => i.bonuses.prayer],
-];
-
-/** e.g. "+1 str, -27 def" for the change from one item to another. */
-const statDiff = (from: EquipmentPiece | null, to: EquipmentPiece): string => STAT_LABELS
-  .map(([label, get]): [string, number] => [label, get(to) - (from ? get(from) : 0)])
-  .filter(([, d]) => d !== 0)
-  .map(([label, d]) => `${d > 0 ? '+' : ''}${Number(d.toFixed(1))} ${label}`)
-  .join(', ');
-
-const alternativeTooltip = (loadout: OptimizedLoadout, alt: LoadoutAlternative) => {
-  const chosen = loadout.equipment[alt.slot];
-  const parts = [
-    `${alt.item.name} instead of ${chosen ? chosen.name : 'nothing'} (${alt.slot}): same DPS right now.`,
-    `Stats: ${statDiff(chosen, alt.item)}.`,
-    alt.betterAfterDrain
-      ? `Better once your boosts drain by ${alt.betterAfterDrain.levels} level${alt.betterAfterDrain.levels === 1 ? '' : 's'} (+${alt.betterAfterDrain.dpsGain.toFixed(3)} DPS).`
-      : 'Does not become better as your boosts drain.',
-    'Click to apply the loadout with this item.',
-  ];
-  return parts.join(' ');
-};
-
-/**
- * The difference with the result below, coloured by whether it's better (green) or worse (red). Hidden if it rounds to
- * zero.
- */
-const Delta: React.FC<{
-  value: number,
-  precision: number,
-  lowerIsBetter?: boolean,
-  tooltip: string,
-  /** Formats the (positive) difference, instead of showing it to `precision` decimals. */
-  format?: (n: number) => string,
-}> = ({
-  value, precision, lowerIsBetter, tooltip, format,
-}) => {
-  if (Math.abs(value) < 0.5 * 10 ** -precision) return null;
-  const better = lowerIsBetter ? value < 0 : value > 0;
-  return (
-    <span
-      className={`ml-1 text-xs font-semibold ${better ? 'text-green-400 dark:text-green-300' : 'text-red-400 dark:text-red-300'}`}
-      data-tooltip-id="tooltip"
-      data-tooltip-content={tooltip}
-    >
-      {`${value > 0 ? '+' : '−'}${format ? format(Math.abs(value)) : Math.abs(value).toFixed(precision)}`}
-    </span>
-  );
-};
-
-/** The levels, boosts and extra options a search was run with, which applying a result copies into the loadout. */
-type SearchBase = Pick<Player, 'skills' | 'boosts' | 'buffs'>;
-
-const LoadoutRow: React.FC<{
-  loadout: OptimizedLoadout,
-  /** The result below this one, to compare with. */
-  next?: OptimizedLoadout,
-  base: SearchBase,
-  rank: number,
-  canCreateLoadout: boolean,
-}> = observer(({
-  loadout, next, base, rank, canCreateLoadout,
-}) => {
-  const store = useStore();
-
-  return (
-    <tr className="border-t border-body-300 dark:border-dark-200">
-      <td className="px-2 py-1 text-gray-500 dark:text-gray-300">{rank}</td>
-      <td className="px-2 py-1">
-        <div className="font-bold flex items-center gap-1">
-          {loadout.equipment.weapon ? loadout.equipment.weapon.name : 'Unarmed'}
-          {loadout.equipment.weapon?.itemVars?.blowpipeDartName && (
-            <span className="flex items-center gap-0.5 font-normal">
-              {`(${loadout.equipment.weapon.itemVars.blowpipeDartName}`}
-              <IgnoreAmmoButton name={loadout.equipment.weapon.itemVars.blowpipeDartName} size={12} />
-              )
-            </span>
-          )}
-          {loadout.equipment.weapon && (
-            <button
-              type="button"
-              className="text-gray-500 dark:text-gray-300 hover:text-red transition-colors"
-              onClick={() => store.toggleExcludedItem(loadout.equipment.weapon!.id)}
-              aria-label={`Exclude ${loadout.equipment.weapon.name}`}
-              data-tooltip-id="tooltip"
-              data-tooltip-content={`Exclude ${loadout.equipment.weapon.name} from future searches`}
-            >
-              <IconX size={14} />
-            </button>
-          )}
-        </div>
-        <div className="text-xs text-gray-500 dark:text-gray-300 flex flex-wrap items-center gap-x-1">
-          {`${loadout.style.name} (${loadout.style.stance})`}
-          {loadout.style.type === 'ranged' && loadout.equipment.ammo && (
-            <>
-              {' · '}
-              <span>{loadout.equipment.ammo.name}</span>
-              <IgnoreAmmoButton name={loadout.equipment.ammo.name} size={12} />
-            </>
-          )}
-          {loadout.spell && (
-            <>
-              {' · '}
-              <span>{loadout.spell.name}</span>
-              <button
-                type="button"
-                className="hover:text-red transition-colors"
-                onClick={() => store.toggleExcludedSpell(loadout.spell!.name)}
-                aria-label={`Exclude ${loadout.spell.name}`}
-                data-tooltip-id="tooltip"
-                data-tooltip-content={`Exclude ${loadout.spell.name} from future searches`}
-              >
-                <IconX size={12} />
-              </button>
-            </>
-          )}
-        </div>
-      </td>
-      <td className="px-2 py-1">
-        <div className="flex flex-wrap gap-0.5">
-          {DISPLAY_SLOTS.map((slot) => {
-            const item = loadout.equipment[slot];
-            if (!item) {
-              return (
-                <div
-                  key={slot}
-                  className="w-7 h-7 bg-body-100 dark:bg-dark-400 rounded"
-                  data-tooltip-id="tooltip"
-                  data-tooltip-content={`${slot}: (empty)`}
-                />
-              );
-            }
-            const kept = loadout.risk?.keptSlots.includes(slot);
-            return (
-              <button
-                key={slot}
-                type="button"
-                className="relative w-7 h-7 flex items-center justify-center bg-body-100 dark:bg-dark-400 rounded hover:ring-2 hover:ring-red-400"
-                data-tooltip-id="tooltip"
-                data-tooltip-content={`${slot}: ${item.name}${kept ? ' (kept on death)' : ''} (click to exclude it from future searches)`}
-                aria-label={`Exclude ${item.name}`}
-                onClick={() => store.toggleExcludedItem(item.id)}
-              >
-                {item.image && <LazyImage responsive src={getCdnImage(`equipment/${item.image}`)} alt={item.name} />}
-                {kept && (
-                  <IconShieldCheckFilled
-                    size={12}
-                    className="absolute -top-1 -right-1 text-green-700 dark:text-green-300"
-                    aria-label="Kept on death"
-                  />
-                )}
-              </button>
-            );
-          })}
-          {loadout.risk && loadout.risk.untradeableSlots.length > 0 && (
-            <div
-              className="w-7 h-7 flex items-center justify-center text-orange-400 dark:text-orange-300"
-              data-tooltip-id="tooltip"
-              data-tooltip-content={`Untradeables at risk: ${loadout.risk.untradeableSlots.map((s) => loadout.equipment[s]!.name).join(', ')}. They have no GE price, so they count as free. Depending on the item and the Wilderness level, they may be lost, turn into coins for your killer, or need repairing.`}
-            >
-              <IconAlertTriangle size={20} aria-label="Untradeables at risk" />
-            </div>
-          )}
-        </div>
-        {loadout.alternatives.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1 mt-1 text-xs text-gray-500 dark:text-gray-300">
-            <span
-              data-tooltip-id="tooltip"
-              data-tooltip-content="Items that give the same DPS right now, but trade defence for offensive stats that may help once your boosts drain."
-            >
-              Same DPS:
-            </span>
-            {loadout.alternatives.map((alt) => (
-              <button
-                key={`${alt.slot}-${alt.item.id}`}
-                type="button"
-                className="flex items-center gap-1 pl-0.5 pr-1 rounded bg-body-100 dark:bg-dark-400 hover:ring-2 hover:ring-orange-400"
-                data-tooltip-id="tooltip"
-                data-tooltip-content={alternativeTooltip(loadout, alt)}
-                onClick={() => store.applyOptimizedLoadout({ ...loadout, equipment: { ...loadout.equipment, [alt.slot]: alt.item } }, false, base)}
-              >
-                <span className="w-4 h-4 flex items-center justify-center">
-                  {alt.item.image && <LazyImage responsive src={getCdnImage(`equipment/${alt.item.image}`)} alt="" />}
-                </span>
-                {alt.item.name}
-                {alt.betterAfterDrain && <span className="text-orange-500">{`(−${alt.betterAfterDrain.levels} lvl)`}</span>}
-              </button>
-            ))}
-          </div>
-        )}
-      </td>
-      <td className="px-2 py-1 text-right font-bold whitespace-nowrap">
-        {loadout.dps.toFixed(3)}
-        {next && <Delta value={loadout.dps - next.dps} precision={3} tooltip={`DPS compared with #${rank + 1}`} />}
-      </td>
-      <td className="px-2 py-1 text-right">{loadout.maxHit}</td>
-      <td className="px-2 py-1 text-right">{`${(loadout.accuracy * 100).toFixed(2)}%`}</td>
-      <td className="px-2 py-1 text-right whitespace-nowrap">
-        {loadout.npcDps > 0 ? (
-          <>
-            <div>
-              {loadout.avgDmgTaken !== undefined ? loadout.avgDmgTaken.toFixed(1) : '-----'}
-              {loadout.avgDmgTaken !== undefined && next?.avgDmgTaken !== undefined && (
-                <Delta
-                  value={loadout.avgDmgTaken - next.avgDmgTaken}
-                  precision={1}
-                  lowerIsBetter
-                  tooltip={`Damage taken per kill compared with #${rank + 1}`}
-                />
-              )}
-            </div>
-            <div className="text-xs text-gray-500 dark:text-gray-300">{`${loadout.npcDps.toFixed(3)}/s`}</div>
-          </>
-        ) : '-----'}
-      </td>
-      {loadout.risk && (
-        <td className="px-2 py-1 text-right whitespace-nowrap">
-          <div>
-            {formatGp(loadout.risk.risk)}
-            {next?.risk && (
-              <Delta
-                value={loadout.risk.risk - next.risk.risk}
-                precision={0}
-                lowerIsBetter
-                format={formatGp}
-                tooltip={`Risk compared with #${rank + 1}`}
-              />
-            )}
-          </div>
-          <div className="text-xs text-gray-500 dark:text-gray-300">{`of ${formatGp(loadout.risk.total)}`}</div>
-        </td>
-      )}
-      <td className="px-2 py-1 text-right whitespace-nowrap">{`${loadout.weight.toFixed(1)} kg`}</td>
-      <td className="px-2 py-1">
-        <div className="flex gap-1 justify-end">
-          <button
-            type="button"
-            className="form-control text-xs whitespace-nowrap"
-            onClick={() => store.applyOptimizedLoadout(loadout, false, base)}
-            data-tooltip-id="tooltip"
-            data-tooltip-content="Replace the current loadout with this gear, and the levels, potions, prayers and extra options the search used"
-          >
-            Apply
-          </button>
-          <button
-            type="button"
-            className="form-control text-xs whitespace-nowrap"
-            disabled={!canCreateLoadout}
-            onClick={() => store.applyOptimizedLoadout(loadout, true, base)}
-            data-tooltip-id="tooltip"
-            data-tooltip-content={canCreateLoadout ? 'Add this setup to your loadouts at the top, to compare it with them' : 'You have the maximum number of loadouts'}
-          >
-            Add to loadouts
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-});
-
-/**
- * Lets the user pick owned items that the search should never use.
- */
-const ExcludedItems: React.FC<{ owned: EquipmentPiece[] }> = observer(({ owned }) => {
-  const store = useStore();
-  const { excludedItemIds } = store;
-
-  const options = useMemo(() => owned
-    .filter((i) => !excludedItemIds.includes(i.id))
-    .map((i) => ({
-      label: i.name, version: i.version, value: i.id, equipment: i,
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label)), [owned, excludedItemIds]);
-
-  const excluded = excludedItemIds
-    .map((id) => owned.find((i) => i.id === id) || resolveEquipment(id))
-    .filter(isDefined);
-
-  return (
-    <div className="my-3">
-      <div className="font-bold mb-1">Excluded items</div>
-      <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
-        Items the search will never use, e.g. ones you don&apos;t want to risk or bring. You can also click any item in the
-        results to exclude it. Locked slots still use their item, even if it is excluded.
-      </p>
-      <div className="max-w-sm">
-        <Combobox
-          id="gear-optimizer-exclude"
-          items={options}
-          placeholder="Search your items to exclude..."
-          resetAfterSelect
-          onSelectedItemChange={(i) => {
-            if (i) store.toggleExcludedItem(i.value);
-          }}
-          CustomItemComponent={({ item }) => (
-            <div className="flex items-center gap-2">
-              <div className="basis-4 flex justify-center h-[20px] w-auto">
-                {item.equipment.image && <LazyImage responsive src={getCdnImage(`equipment/${item.equipment.image}`)} alt="" />}
-              </div>
-              <div>
-                {item.label}
-                {item.version && <span className="monster-version relative text-xs text-gray-400 dark:text-gray-300">{`#${item.version}`}</span>}
-              </div>
-            </div>
-          )}
-        />
-      </div>
-      {excluded.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 mt-2">
-          {excluded.map((item) => (
-            <span
-              key={item.id}
-              className="flex items-center gap-1 pl-1 pr-0.5 py-0.5 rounded bg-body-100 dark:bg-dark-400 text-xs"
-            >
-              {item.image && (
-                <span className="w-4 h-4 flex items-center justify-center">
-                  <LazyImage responsive src={getCdnImage(`equipment/${item.image}`)} alt="" />
-                </span>
-              )}
-              {item.name}
-              <button
-                type="button"
-                className="text-gray-500 hover:text-red transition-colors"
-                onClick={() => store.toggleExcludedItem(item.id)}
-                aria-label={`Stop excluding ${item.name}`}
-                data-tooltip-id="tooltip"
-                data-tooltip-content="Stop excluding this item"
-              >
-                <IconX size={14} />
-              </button>
-            </span>
-          ))}
-          <button
-            type="button"
-            className="form-control text-xs ml-1"
-            onClick={() => store.setExcludedItemIds([])}
-          >
-            Clear all
-          </button>
-        </div>
-      )}
-    </div>
-  );
-});
-
-/**
- * The ammo (and blowpipe darts) that the search should never load.
- */
-const IgnoredAmmo: React.FC = observer(() => {
-  const store = useStore();
-  const { ignoredAmmo } = store;
-
-  return (
-    <div className="my-3">
-      <div className="font-bold mb-1">Ignored ammo</div>
-      <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
-        Ammo and blowpipe darts the search will never load, e.g. ones that are too expensive to burn. Click the × next to
-        the ammo or dart of a result to ignore it. Unlike excluding an item, ignored darts can still be thrown, and the
-        weapons that fired them still use other ammo.
-      </p>
-      {ignoredAmmo.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1">
-          {ignoredAmmo.map((name) => (
-            <span
-              key={name}
-              className="flex items-center gap-1 pl-1 pr-0.5 py-0.5 rounded bg-body-100 dark:bg-dark-400 text-xs"
-            >
-              {name}
-              <button
-                type="button"
-                className="text-gray-500 hover:text-red transition-colors"
-                onClick={() => store.toggleIgnoredAmmo(name)}
-                aria-label={`Stop ignoring ${name}`}
-                data-tooltip-id="tooltip"
-                data-tooltip-content="Stop ignoring this ammo"
-              >
-                <IconX size={14} />
-              </button>
-            </span>
-          ))}
-          <button
-            type="button"
-            className="form-control text-xs ml-1"
-            onClick={() => store.setIgnoredAmmo([])}
-          >
-            Clear all
-          </button>
-        </div>
-      )}
-    </div>
-  );
-});
-
-const elementalSpells = (spellClass: string) => (name: string) => new RegExp(`^(Wind|Water|Earth|Fire) ${spellClass}$`).test(name);
-const ancientSpells = (spellClass: string) => (name: string) => new RegExp(`^(Smoke|Shadow|Blood|Ice) ${spellClass}$`).test(name);
-
-/**
- * Groups of spells that can be excluded together. The spell data doesn't include rune costs, so they are grouped by
- * class instead (which mostly share their runes, e.g. surges all use wrath runes).
- */
-const SPELL_CLASSES: { label: string, includes: (name: string) => boolean }[] = [
-  { label: 'Strikes', includes: elementalSpells('Strike') },
-  { label: 'Bolts', includes: elementalSpells('Bolt') },
-  { label: 'Blasts', includes: elementalSpells('Blast') },
-  { label: 'Waves', includes: elementalSpells('Wave') },
-  { label: 'Surges', includes: elementalSpells('Surge') },
-  { label: 'God spells', includes: (n) => ['Saradomin Strike', 'Claws of Guthix', 'Flames of Zamorak'].includes(n) },
-  { label: 'Rushes', includes: ancientSpells('Rush') },
-  { label: 'Bursts', includes: ancientSpells('Burst') },
-  { label: 'Blitzes', includes: ancientSpells('Blitz') },
-  { label: 'Barrages', includes: ancientSpells('Barrage') },
-  { label: 'Demonbanes', includes: (n) => n.endsWith(' Demonbane') },
-  { label: 'Grasps', includes: (n) => /^(Ghostly|Skeletal|Undead) Grasp$/.test(n) },
-];
-
-/**
- * Lets the user pick spells that the search should never use, e.g. because their runes are too expensive.
- */
-const ExcludedSpells: React.FC = observer(() => {
-  const store = useStore();
-  const { excludedSpells } = store;
-
-  const allSpells = ALL_SPELLS;
-  const options = useMemo(() => allSpells
-    .filter((sp) => !excludedSpells.includes(sp.name))
-    .map((sp) => ({
-      label: sp.name, version: sp.spellbook, value: sp.name, spell: sp,
-    })), [allSpells, excludedSpells]);
-  const excluded = excludedSpells.map((name) => allSpells.find((sp) => sp.name === name)).filter(isDefined);
-
-  const classes = useMemo(() => SPELL_CLASSES.map((c) => ({
-    ...c,
-    names: allSpells.filter((sp) => c.includes(sp.name)).map((sp) => sp.name),
-  })), [allSpells]);
-  const toggleClass = (names: string[], isExcluded: boolean) => store.setExcludedSpells(isExcluded
-    ? excludedSpells.filter((n) => !names.includes(n))
-    : [...excludedSpells, ...names]);
-
-  return (
-    <div className="my-3">
-      <div className="font-bold mb-1">Excluded spells</div>
-      <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
-        Spells the search will never cast, e.g. ones whose runes are too expensive. You can also click the × next to a
-        spell in the results. Powered staves (like the Warped sceptre) use their own built-in spell and aren&apos;t affected.
-      </p>
-      <div className="flex flex-wrap items-center gap-1 mb-2">
-        <span className="text-xs text-gray-500 dark:text-gray-300 mr-1">Exclude a whole class:</span>
-        {classes.map(({ label, names }) => {
-          const isExcluded = names.length > 0 && names.every((n) => excludedSpells.includes(n));
-          return (
-            <button
-              key={label}
-              type="button"
-              onClick={() => toggleClass(names, isExcluded)}
-              className={`px-2 py-0.5 rounded text-xs ${isExcluded
-                ? 'bg-red-400 text-white line-through'
-                : 'bg-body-100 dark:bg-dark-400 hover:bg-body-200 dark:hover:bg-dark-200'}`}
-              aria-pressed={isExcluded}
-              data-tooltip-id="tooltip"
-              data-tooltip-content={`${isExcluded ? 'Stop excluding' : 'Exclude'} ${names.join(', ')}`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-      <div className="max-w-sm">
-        <Combobox
-          id="gear-optimizer-exclude-spell"
-          items={options}
-          placeholder="Search spells to exclude..."
-          resetAfterSelect
-          onSelectedItemChange={(i) => {
-            if (i) store.toggleExcludedSpell(i.value);
-          }}
-          CustomItemComponent={({ item }) => (
-            <div className="flex items-center gap-2">
-              <div className="basis-4 flex justify-center h-[20px] w-auto">
-                {item.spell.image && <LazyImage responsive src={getWikiImage(item.spell.image)} alt="" />}
-              </div>
-              <div>
-                {item.label}
-                <span className="monster-version relative text-xs text-gray-400 dark:text-gray-300">{`#${item.version}`}</span>
-              </div>
-            </div>
-          )}
-        />
-      </div>
-      {excluded.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 mt-2">
-          {excluded.map((sp) => (
-            <span
-              key={sp.name}
-              className="flex items-center gap-1 pl-1 pr-0.5 py-0.5 rounded bg-body-100 dark:bg-dark-400 text-xs"
-            >
-              {sp.image && (
-                <span className="w-4 h-4 flex items-center justify-center">
-                  <LazyImage responsive src={getWikiImage(sp.image)} alt="" />
-                </span>
-              )}
-              {sp.name}
-              <button
-                type="button"
-                className="text-gray-500 hover:text-red transition-colors"
-                onClick={() => store.toggleExcludedSpell(sp.name)}
-                aria-label={`Stop excluding ${sp.name}`}
-                data-tooltip-id="tooltip"
-                data-tooltip-content="Stop excluding this spell"
-              >
-                <IconX size={14} />
-              </button>
-            </span>
-          ))}
-          <button
-            type="button"
-            className="form-control text-xs ml-1"
-            onClick={() => store.setExcludedSpells([])}
-          >
-            Clear all
-          </button>
-        </div>
-      )}
-    </div>
-  );
-});
-
-const fmt = (n: number) => n.toLocaleString();
-
-/** The steps of the search, in order, with the jobs that make them up. */
-const SEARCH_STEPS: {
-  label: string,
-  help: string,
-  kinds: OptimizerJob['kind'][],
-  detail: (s: StyleSearchSummary) => string,
-}[] = [
-  {
-    label: 'Screening',
-    help: 'Every weapon with its best stance, ammo and spell: first with no armour, then with an armour set built around the best weapon, to rank them.',
-    kinds: ['plan'],
-    detail: (s) => `${fmt(s.weaponsScreened)} weapons${s.spells > 0 ? `, ${s.spells} spells` : ''}`,
-  },
-  {
-    label: 'Armour search',
-    help: 'For each of the best weapons, swaps one armour slot at a time while that improves DPS. Also starts from any armour sets you own (void etc.), and with a minimum weight, from setups that spread the weight differently.',
-    kinds: ['refine'],
-    detail: (s) => `${fmt(s.weaponsRefined)} weapons${s.setStarts > 0 ? ` + ${s.setStarts} set starts` : ''}`,
-  },
-  {
-    label: 'Two-slot swaps',
-    help: 'Tries changing every pair of armour slots at once around the best results, to escape setups where no single swap helps.',
-    kinds: ['pairSwap'],
-    detail: (s) => `${fmt(s.pairSwapped)} results`,
-  },
-  {
-    label: 'Combinations',
-    help: 'Around each shown result, tries every combination of the most promising items per slot, which finds improvements that need many slots to change at once.',
-    kinds: ['shortlist', 'exhaust'],
-    detail: (s) => `${fmt(s.exhaustiveCombinations)} tried, ${s.exhaustiveImprovements} improved`,
-  },
-  {
-    label: 'Final pass',
-    help: 'A last round of single swaps and style and spell changes, and the search for equal-DPS alternatives (including how they hold up as boosts drain).',
-    kinds: ['describe'],
-    detail: () => '',
-  },
-];
-
-/**
- * A summary of what the search simulated, per style and step.
- */
-const SearchSummary: React.FC<{ result: OptimizerResult, elapsed: number }> = ({ result, elapsed }) => {
-  const { summary } = result;
-  const styles = OPTIMIZER_STYLES.filter((style) => summary[style]);
-  const stepEvaluations = (style: OptimizerStyle, kinds: OptimizerJob['kind'][]) => kinds
-    .reduce((n, k) => n + (summary[style]!.evaluations[k] ?? 0), 0);
-  const styleTotal = (style: OptimizerStyle) => Object.values(summary[style]!.evaluations).reduce((a, b) => a + b, 0);
-  const armourSlots = DISPLAY_SLOTS.filter((s) => s !== 'weapon');
-
-  return (
-    <details className="mb-4 text-xs">
-      <summary className="cursor-pointer text-gray-500 dark:text-gray-300 hover:text-black dark:hover:text-white">
-        {`What was simulated: ${fmt(result.evaluations)} setups in ${(elapsed / 1000).toFixed(1)}s`}
-      </summary>
-      <div className="overflow-x-auto mt-2">
-        <table className="text-xs">
-          <thead>
-            <tr className="text-left">
-              <th className="px-2 py-1">Step</th>
-              {styles.map((style) => <th key={style} className="px-2 py-1 text-right">{STYLE_LABELS[style]}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {SEARCH_STEPS.map((step) => (
-              <tr key={step.label} className="border-t border-body-300 dark:border-dark-200 align-top">
-                <td className="px-2 py-1">
-                  <span className="underline decoration-dotted" data-tooltip-id="tooltip" data-tooltip-content={step.help}>{step.label}</span>
-                </td>
-                {styles.map((style) => (
-                  <td key={style} className="px-2 py-1 text-right tabular-nums">
-                    <div>{`${fmt(stepEvaluations(style, step.kinds))} sims`}</div>
-                    <div className="text-gray-500 dark:text-gray-300">{step.detail(summary[style]!)}</div>
-                  </td>
-                ))}
-              </tr>
-            ))}
-            <tr className="border-t border-body-300 dark:border-dark-200 font-bold">
-              <td className="px-2 py-1">Total</td>
-              {styles.map((style) => (
-                <td key={style} className="px-2 py-1 text-right tabular-nums">{`${fmt(styleTotal(style))} sims`}</td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-        <div className="font-bold mt-3 mb-1">Items tried per slot</div>
-        <p className="text-gray-500 dark:text-gray-300 mb-1">
-          Items that are never better than another item you own for that style (in every relevant stat) are skipped,
-          unless they have a special effect. Ammo is compared per weapon (the count is the most tried with any one
-          weapon), and for weapons that don&apos;t use ammo only its defence and prayer bonuses count.
-        </p>
-        <table className="text-xs">
-          <thead>
-            <tr>
-              <th className="px-2 py-1 text-left">Style</th>
-              {armourSlots.map((slot) => (
-                <th key={slot} className="px-1 py-1">
-                  <div className="w-5 h-5 mx-auto" data-tooltip-id="tooltip" data-tooltip-content={slot}>
-                    <LazyImage responsive src={SLOT_PLACEHOLDERS[slot]} alt={slot} />
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {styles.map((style) => (
-              <tr key={style} className="border-t border-body-300 dark:border-dark-200">
-                <td className="px-2 py-1">{STYLE_LABELS[style]}</td>
-                {armourSlots.map((slot) => (
-                  <td key={slot} className="px-1 py-1 text-center tabular-nums">{summary[style]!.candidatesPerSlot[slot] ?? 0}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </details>
-  );
-};
-
-/**
- * Lets the user lock slots to an item (or to being empty) while the rest of the gear is searched.
- */
-const SlotLocks: React.FC = observer(() => {
-  const store = useStore();
-  const { locked } = store.optimizerSettings;
-
-  return (
-    <div className="px-4 py-4">
-      <p className="text-xs text-gray-500 dark:text-gray-300 mb-2">
-        Search for an item to lock its slot to it. It doesn&apos;t need to be owned. Click an unlocked slot to keep it
-        empty, or a locked slot to unlock it. The search only changes the unlocked slots.
-      </p>
-      <div className="flex flex-wrap items-center gap-1 mb-2">
-        {DISPLAY_SLOTS.map((slot) => {
-          const isLocked = Object.hasOwn(locked, slot);
-          const item = locked[slot];
-          // eslint-disable-next-line no-nested-ternary
-          const label = `${slot}: ${!isLocked ? 'searched' : item ? `${item.name} (locked)` : 'empty (locked)'}`;
-          return (
-            <button
-              key={slot}
-              type="button"
-              onClick={() => store.setOptimizerLock(slot, isLocked ? undefined : null)}
-              className={`relative w-9 h-9 p-1 rounded border-2 flex items-center justify-center transition-colors ${isLocked
-                ? 'border-orange-400 bg-orange-200 dark:bg-orange-900'
-                : 'border-transparent bg-body-100 dark:bg-dark-400 hover:border-body-300 dark:hover:border-dark-200'}`}
-              data-tooltip-id="tooltip"
-              data-tooltip-content={label}
-              aria-label={label}
-              aria-pressed={isLocked}
-            >
-              <LazyImage
-                responsive
-                src={item?.image ? getCdnImage(`equipment/${item.image}`) : SLOT_PLACEHOLDERS[slot]}
-                alt=""
-              />
-              {isLocked && <IconLock size={14} className="absolute -top-1.5 -right-1.5 text-orange-500" />}
-            </button>
-          );
-        })}
-      </div>
-      <EquipmentSelect
-        id="gear-optimizer-lock-select"
-        placeholder="Lock a slot to an item..."
-        onSelectedItemChange={(option) => {
-          if (option) store.setOptimizerLock(option.equipment.slot as keyof PlayerEquipment, option.equipment);
-        }}
-      />
-    </div>
-  );
-});
-
-type SettingsTab = 'skills' | 'prayer' | 'equipment' | 'options';
-
-/**
- * The levels, potions, prayers, locked items and extra options the search uses. These are separate from the loadouts.
- */
-const PlayerSettings: React.FC = observer(() => {
-  const store = useStore();
-  const settings = store.optimizerSettings;
-  const [tab, setTab] = useState<SettingsTab>('skills');
-
-  return (
-    <div className="w-full max-w-[350px] shrink-0 flex flex-col rounded-lg border border-body-300 dark:border-dark-200 bg-tile dark:bg-dark-300">
-      <div className="flex justify-center items-center rounded-t-lg bg-body-100 dark:bg-dark-400 border-b border-body-400 dark:border-dark-200 px-4 py-3 gap-1">
-        <PlayerTab name="Skills" isActive={tab === 'skills'} image={skillsTab} onClick={() => setTab('skills')} />
-        <PlayerTab name="Prayer" isActive={tab === 'prayer'} image={prayerTab} onClick={() => setTab('prayer')} />
-        <PlayerTab name="Locked equipment" isActive={tab === 'equipment'} image={equipmentTab} onClick={() => setTab('equipment')} />
-        <PlayerTab name="Extra options" isActive={tab === 'options'} image={optionsTab} onClick={() => setTab('options')} />
-      </div>
-      {tab === 'skills' && (
-        <SkillsAndBoosts
-          skills={settings.skills}
-          boosts={settings.boosts}
-          potions={settings.buffs.potions}
-          onChange={(change) => store.updateOptimizerSettings(change)}
-          togglePotion={store.toggleOptimizerPotion}
-          lookupTarget="optimizer"
-          lookupExtra={(
-            <WikiSyncButton
-              id="gear-optimizer-wikisync"
-              onImport={(p) => store.updateOptimizerSettings({
-                skills: p.skills as Partial<PlayerSkills>,
-                buffs: p.buffs as Partial<Player['buffs']>,
-              })}
-            />
-          )}
-        />
-      )}
-      {tab === 'prayer' && (
-        <div className="px-4 mb-6">
-          <PrayerGrid prayers={settings.prayers} onToggle={store.toggleOptimizerPrayer} />
-          <p className="text-xs text-gray-500 dark:text-gray-300 mt-4">
-            Each style uses the selected prayers for it (e.g. Piety for melee), plus the ones for every style (e.g. Steel
-            Skin). You can select one for each style at the same time.
-          </p>
-        </div>
-      )}
-      {tab === 'equipment' && <SlotLocks />}
-      {tab === 'options' && (
-        <ExtraOptionsList buffs={settings.buffs} onChange={(buffs) => store.updateOptimizerSettings({ buffs })} />
-      )}
-    </div>
-  );
-});
-
-/** An amount of gp, typed like 500k or 1.2m. The value is only changed once the input is valid. */
-const GpInput: React.FC<{ id: string, label: string, value: number, onChange: (gp: number) => void }> = ({
-  id, label, value, onChange,
-}) => {
-  const [text, setText] = useState(formatGp(value));
-  useEffect(() => setText(formatGp(value)), [value]);
-  const valid = Number.isFinite(parseGp(text));
-
-  return (
-    <input
-      id={id}
-      type="text"
-      aria-label={label}
-      inputMode="decimal"
-      className={`form-control w-24 ${valid ? '' : 'ring-2 ring-red-400'}`}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        const gp = parseGp(e.target.value);
-        if (Number.isFinite(gp)) onChange(gp);
-      }}
-      onBlur={() => setText(formatGp(value))}
-    />
-  );
-};
-
-/**
- * The wilderness mode options: limits how much the setups risk losing on death.
- * @param priceIds - the items whose prices the search needs
- */
-const WildernessOptions: React.FC<{ priceIds: number[] }> = observer(({ priceIds }) => {
-  const store = useStore();
-  const { wilderness } = store.optimizerSettings;
-  const [refreshing, setRefreshing] = useState(false);
-  const update = (change: Partial<typeof wilderness>) => store.updateOptimizerSettings({ wilderness: { ...wilderness, ...change } });
-
-  const fetchedAt = priceIds.map((id) => store.itemPrices[id]?.fetchedAt).filter(isDefined);
-  const oldest = fetchedAt.length > 0 ? Math.min(...fetchedAt) : undefined;
-  const kept = keptItemsCount(wilderness);
-
-  const refresh = async () => {
-    setRefreshing(true);
-    try {
-      await store.loadItemPrices(priceIds, true);
-    } catch (e) {
-      console.error('[GearOptimizer] Failed to refresh prices', e);
-      toast.error('Failed to refresh the GE prices.');
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  return (
-    <div className="my-3">
-      <Toggle
-        checked={wilderness.enabled}
-        setChecked={(enabled) => update({ enabled })}
-        label={<span className="font-bold">Wilderness</span>}
-      />
-      <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
-        Only return setups that lose at most this much on death, after your most valuable items are kept. Uses GE prices,
-        and turns on &quot;In the Wilderness&quot; for the wilderness weapons.
-      </p>
-      {wilderness.enabled && (
-        <>
-          <div className="flex items-center gap-2">
-            <span className="text-xs">Max risk</span>
-            <GpInput id="gear-optimizer-max-risk" label="Max risk (gp)" value={wilderness.maxRisk} onChange={(maxRisk) => update({ maxRisk })} />
-            <span className="text-xs text-gray-500 dark:text-gray-300">{`gp (${kept} item${kept === 1 ? '' : 's'} kept)`}</span>
-          </div>
-          <div className="flex flex-wrap gap-x-6 mt-1">
-            <Toggle checked={wilderness.protectItem} setChecked={(protectItem) => update({ protectItem })} label="Protect Item" />
-            <Toggle checked={wilderness.skulled} setChecked={(skulled) => update({ skulled })} label="Skulled" />
-            <Toggle
-              checked={wilderness.skipUntradeables}
-              setChecked={(skipUntradeables) => update({ skipUntradeables })}
-              label={(
-                <span
-                  data-tooltip-id="tooltip"
-                  data-tooltip-content="Untradeables have no GE price, so they count as free, but they may be lost or need repairing. Locked items are still used."
-                >
-                  Skip untradeables
-                </span>
-              )}
-            />
-          </div>
-          <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-300 mt-1">
-            {oldest
-              ? `GE prices from ${new Date(oldest).toLocaleDateString()}`
-              : 'GE prices are fetched from the Weird Gloop API when you search.'}
-            {oldest && (
-              <button
-                type="button"
-                className="hover:text-orange-500 transition-colors disabled:opacity-50"
-                disabled={refreshing}
-                onClick={refresh}
-                aria-label="Refresh prices"
-                data-tooltip-id="tooltip"
-                data-tooltip-content="Refresh prices (they're otherwise kept for 30 days)"
-              >
-                <IconRefresh size={14} className={refreshing ? 'animate-spin' : ''} />
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-});
-
 const GearOptimizer: React.FC = observer(() => {
   const calc = useCalc();
   const store = useStore();
-  const { bank, monster } = store;
-  const settings = store.optimizerSettings;
+  const optimizer = useOptimizer();
+  const { monster } = store;
+  const { bank, settings } = optimizer;
   const {
     styles, training, spell, minWeight, locked, prayers, wilderness,
   } = settings;
+
+  // the bank and the settings are saved in the browser
+  useEffect(() => optimizer.load(), [optimizer]);
 
   const [isOpen, setIsOpen] = useState(true);
   const [running, setRunning] = useState<{ start: number }>();
@@ -1027,7 +87,7 @@ const GearOptimizer: React.FC = observer(() => {
     return resolveOwnedEquipment(bank.items, JSON.parse(equippedIds));
   }, [bank, equippedIds]);
 
-  const { excludedItemIds } = store;
+  const { excludedItemIds } = optimizer;
   const owned = useMemo(
     () => ownedAll.filter((i) => !excludedItemIds.includes(i.id)),
     [ownedAll, excludedItemIds],
@@ -1044,17 +104,17 @@ const GearOptimizer: React.FC = observer(() => {
   // used to tell whether the results are out of date
   const inputsKey = JSON.stringify([
     toJS(monster), toJS(settings.skills), toJS(settings.boosts), toJS(settings.buffs), owned.map((o) => o.id), toJS(prayers),
-    toJS(locked), training ?? null, castSpell ? null : toJS(store.excludedSpells), minWeight, searchStyles, castSpell ?? null,
-    toJS(store.ignoredAmmo), wilderness.enabled ? toJS(wilderness) : null,
+    toJS(locked), training ?? null, castSpell ? null : toJS(optimizer.excludedSpells), minWeight, searchStyles, castSpell ?? null,
+    toJS(optimizer.ignoredAmmo), wilderness.enabled ? toJS(wilderness) : null,
   ]);
 
   /** The GE values of the items the search can use, fetching the ones that aren't cached. */
   const loadValues = async (): Promise<Record<number, number> | undefined> => {
     try {
-      await store.loadItemPrices(priceIds);
+      await optimizer.loadItemPrices(priceIds);
     } catch (e) {
       console.error('[GearOptimizer] Failed to load prices', e);
-      if (priceIds.some((id) => !store.itemPrices[id])) {
+      if (priceIds.some((id) => !optimizer.itemPrices[id])) {
         toast.error('Failed to load the GE prices for wilderness mode. Try again later.');
         return undefined;
       }
@@ -1062,13 +122,13 @@ const GearOptimizer: React.FC = observer(() => {
     }
     const values: Record<number, number> = {};
     for (const id of itemIds) {
-      const value = itemValue(id, store.itemPrices);
+      const value = itemValue(id, optimizer.itemPrices);
       if (value !== undefined) values[id] = value;
     }
     return values;
   };
 
-  const toggleStyle = (style: OptimizerStyle) => store.updateOptimizerSettings({
+  const toggleStyle = (style: OptimizerStyle) => optimizer.updateSettings({
     styles: styles.includes(style) ? styles.filter((s) => s !== style) : [...styles, style],
   });
 
@@ -1079,7 +139,7 @@ const GearOptimizer: React.FC = observer(() => {
     setRunning({ start });
     setNow(start);
     setProgress(undefined);
-    const player = store.optimizerBasePlayer;
+    const player = optimizer.basePlayer;
     const values = wilderness.enabled ? await loadValues() : undefined;
     if (wilderness.enabled && !values) {
       setRunning(undefined);
@@ -1095,8 +155,8 @@ const GearOptimizer: React.FC = observer(() => {
           prayers: toJS(prayers),
           locked: toJS(locked),
           training,
-          excludedSpells: toJS(store.excludedSpells),
-          ignoredAmmo: toJS(store.ignoredAmmo),
+          excludedSpells: toJS(optimizer.excludedSpells),
+          ignoredAmmo: toJS(optimizer.ignoredAmmo),
           spell: castSpell,
           minWeight,
           styles: searchStyles,
@@ -1170,7 +230,7 @@ const GearOptimizer: React.FC = observer(() => {
               <button
                 type="button"
                 onClick={() => {
-                  store.clearBank();
+                  optimizer.clearBank();
                   setResult(undefined);
                 }}
                 className="text-body-500 dark:text-dark-100 hover:text-red transition-colors"
@@ -1215,7 +275,7 @@ const GearOptimizer: React.FC = observer(() => {
                   id="gear-optimizer-training"
                   items={TRAINING_OPTIONS}
                   value={TRAINING_OPTIONS.find((o) => o.value === training)}
-                  onSelectedItemChange={(i) => store.updateOptimizerSettings({ training: i?.value })}
+                  onSelectedItemChange={(i) => optimizer.updateSettings({ training: i?.value })}
                 />
               </div>
               <div className="my-3">
@@ -1232,7 +292,7 @@ const GearOptimizer: React.FC = observer(() => {
                     min={0}
                     max={500}
                     step={0.1}
-                    onChange={(v) => store.updateOptimizerSettings({ minWeight: Number.isFinite(v) ? v : 0 })}
+                    onChange={(v) => optimizer.updateSettings({ minWeight: Number.isFinite(v) ? v : 0 })}
                   />
                   <span className="text-xs text-gray-500 dark:text-gray-300">kg</span>
                 </div>
@@ -1253,7 +313,7 @@ const GearOptimizer: React.FC = observer(() => {
                   id="gear-optimizer-spell"
                   items={SPELL_OPTIONS}
                   value={SPELL_OPTIONS.find((o) => o.value === spell)}
-                  onSelectedItemChange={(i) => store.updateOptimizerSettings({ spell: i?.value })}
+                  onSelectedItemChange={(i) => optimizer.updateSettings({ spell: i?.value })}
                 />
               </div>
               )}
