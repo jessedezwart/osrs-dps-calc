@@ -46,6 +46,7 @@ import {
 } from './enums/Prayer';
 import Potion from './enums/Potion';
 import { BankItem } from './lib/BankImport';
+import { fetchPrices, idsToFetch, PriceCache } from './lib/ItemPrices';
 import {
   OPTIMIZER_STYLES, OptimizedLoadout, OptimizerStyle, toggleSearchPrayer, TrainingSkill,
 } from './lib/GearOptimizer';
@@ -61,6 +62,7 @@ const EXCLUDED_ITEMS_STORAGE_KEY = 'dps-calc-excluded-items';
 const EXCLUDED_SPELLS_STORAGE_KEY = 'dps-calc-excluded-spells';
 const IGNORED_AMMO_STORAGE_KEY = 'dps-calc-ignored-ammo';
 const OPTIMIZER_SETTINGS_STORAGE_KEY = 'dps-calc-optimizer-settings';
+const ITEM_PRICES_STORAGE_KEY = 'dps-calc-item-prices';
 
 const EMPTY_CALC_LOADOUT = {} as CalculatedLoadout;
 
@@ -193,6 +195,20 @@ export interface OptimizerSettings {
   /** The only spell to cast with magic. */
   spell?: string;
   minWeight: number;
+  wilderness: WildernessSettings;
+}
+
+/** Wilderness mode limits how much the gear optimizer's setups risk losing on death. */
+export interface WildernessSettings {
+  enabled: boolean;
+  /** The most a setup may lose on death, in gp. */
+  maxRisk: number;
+  /** Whether Protect Item is used, which keeps one more item. */
+  protectItem: boolean;
+  /** Whether the player is skulled, which keeps 3 fewer items. */
+  skulled: boolean;
+  /** Never use untradeable items (which count as free, but may be lost or need repairing), unless they're locked. */
+  skipUntradeables: boolean;
 }
 
 /** A change to the gear optimizer's settings. The skills, boosts and buffs are merged in, the rest is replaced. */
@@ -212,6 +228,13 @@ const generateOptimizerSettings = (): OptimizerSettings => {
     locked: {},
     styles: OPTIMIZER_STYLES,
     minWeight: 0,
+    wilderness: {
+      enabled: false,
+      maxRisk: 100_000,
+      protectItem: false,
+      skulled: false,
+      skipUntradeables: false,
+    },
   };
 };
 
@@ -329,6 +352,9 @@ class GlobalState implements State {
 
   /** The inputs of the gear optimizer, separate from the loadouts. */
   optimizerSettings: OptimizerSettings = generateOptimizerSettings();
+
+  /** Cached GE prices by item ID, for the gear optimizer's wilderness mode. */
+  itemPrices: PriceCache = {};
 
   ui: UI = {
     showPreferencesModal: false,
@@ -672,9 +698,14 @@ class GlobalState implements State {
     }).catch((e) => {
       console.error(e);
     });
+    localforage.getItem(ITEM_PRICES_STORAGE_KEY).then((v) => {
+      if (v) this.itemPrices = v as PriceCache;
+    }).catch((e) => {
+      console.error(e);
+    });
     localforage.getItem(OPTIMIZER_SETTINGS_STORAGE_KEY).then((v) => {
       if (!v) return;
-      const { locked, ...settings } = v as OptimizerSettingsUpdate;
+      const { locked, wilderness, ...settings } = v as OptimizerSettingsUpdate;
       // reload the locked items' data, and drop the locks of items that no longer exist
       const refreshedLocks: Partial<PlayerEquipment> = {};
       for (const [slot, item] of Object.entries(locked || {})) {
@@ -683,7 +714,11 @@ class GlobalState implements State {
       }
       // start from the defaults, so that settings added since they were saved get their default value
       this.optimizerSettings = generateOptimizerSettings();
-      this.updateOptimizerSettings({ ...settings, locked: refreshedLocks });
+      this.updateOptimizerSettings({
+        ...settings,
+        locked: refreshedLocks,
+        wilderness: { ...this.optimizerSettings.wilderness, ...wilderness },
+      });
     }).catch((e) => {
       console.error(e);
     });
@@ -743,13 +778,34 @@ class GlobalState implements State {
    * The player that the gear optimizer searches with: the optimizer's levels, boosts and extra options, with no gear.
    */
   get optimizerBasePlayer(): Player {
-    const { skills, boosts, buffs } = this.optimizerSettings;
+    const {
+      skills, boosts, buffs, wilderness,
+    } = this.optimizerSettings;
     return {
       ...generateEmptyPlayer(),
       skills: toJS(skills),
       boosts: toJS(boosts),
-      buffs: toJS(buffs),
+      // wilderness weapons (Craw's bow etc.) only get their bonus in the Wilderness
+      buffs: { ...toJS(buffs), inWilderness: buffs.inWilderness || wilderness.enabled },
     };
+  }
+
+  /**
+   * Makes sure the prices of these items are cached, requesting the ones that aren't (or that have expired).
+   * @param refresh - request all of them, even if they're cached
+   * @throws Error if a request fails
+   */
+  async loadItemPrices(ids: number[], refresh = false) {
+    const missing = refresh ? ids : idsToFetch(ids, this.itemPrices);
+    if (missing.length === 0) return;
+    this.addItemPrices(await fetchPrices(missing));
+  }
+
+  addItemPrices(prices: PriceCache) {
+    this.itemPrices = { ...this.itemPrices, ...prices };
+    localforage.setItem(ITEM_PRICES_STORAGE_KEY, toJS(this.itemPrices)).catch((e) => {
+      console.error(e);
+    });
   }
 
   setIgnoredAmmo(names: string[]) {

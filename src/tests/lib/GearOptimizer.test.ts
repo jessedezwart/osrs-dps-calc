@@ -1,7 +1,7 @@
 import { describe, expect, test } from '@jest/globals';
 import {
-  equipmentWeight, GearOptimizer, getPrayers, optimizeGear, optimizeGearWith, OPTIMIZER_STYLES, OptimizerProgress,
-  pruneDominated, toggleSearchPrayer, TrainingSkill,
+  AMMO_STACK, equipmentWeight, GearOptimizer, getPrayers, keptItemsCount, optimizeGear, optimizeGearWith, OPTIMIZER_STYLES,
+  OptimizedLoadout, OptimizerProgress, pruneDominated, riskOf, toggleSearchPrayer, TrainingSkill,
 } from '@/lib/GearOptimizer';
 import { Prayer } from '@/enums/Prayer';
 import { CombatStyleStance } from '@/types/PlayerCombatStyle';
@@ -249,6 +249,95 @@ describe('optimizeGear', () => {
     test('returns nothing if the weight cannot be reached', () => {
       const result = optimizeGear(bank, player, monster, { ...opts, minWeight: 1000 });
       expect(result.melee).toHaveLength(0);
+    });
+  });
+
+  describe('wilderness', () => {
+    // Abyssal whip, Dragon defender, Amulet of fury, Berserker ring, Dragon boots, Climbing boots, Rune full helm,
+    // Rune platebody, Rune platelegs
+    const bank = owned([4151, 12954, 6585, 6737, 11840, 3105, 1163, 1127, 1079]);
+    // the dragon defender and climbing boots have no value, so are untradeable
+    const values: Record<number, number> = {
+      4151: 1_500_000, 6585: 2_000_000, 6737: 3_000_000, 11840: 200_000, 1163: 10_000, 1127: 10_000, 1079: 10_000,
+    };
+    const wildernessOpts = (maxRisk: number, keptItems = 3, skipUntradeables = false) => ({
+      ...opts,
+      styles: ['melee' as const],
+      wilderness: {
+        maxRisk, keptItems, values, skipUntradeables,
+      },
+    });
+
+    test('keptItemsCount', () => {
+      expect(keptItemsCount({ protectItem: false, skulled: false })).toBe(3);
+      expect(keptItemsCount({ protectItem: true, skulled: false })).toBe(4);
+      expect(keptItemsCount({ protectItem: false, skulled: true })).toBe(0);
+      expect(keptItemsCount({ protectItem: true, skulled: true })).toBe(1);
+    });
+
+    test('riskOf keeps the most valuable items, and counts ammo as a never-kept stack', () => {
+      const equipment = {
+        ...player.equipment,
+        weapon: findEquipmentById(4151),
+        neck: findEquipmentById(6585),
+        ring: findEquipmentById(6737),
+        feet: findEquipmentById(11840),
+        shield: findEquipmentById(12954),
+        ammo: findEquipmentById(892), // Rune arrow
+      };
+      const w = { maxRisk: 0, keptItems: 3, values: { ...values, 892: 100 } };
+      const risk = riskOf(equipment, w);
+      expect(risk.keptSlots.sort()).toEqual(['neck', 'ring', 'weapon']);
+      expect(risk.risk).toBe(200_000 + 100 * AMMO_STACK);
+      expect(risk.untradeableSlots).toEqual(['shield']);
+      expect(risk.total).toBe(6_700_000 + 100 * AMMO_STACK);
+
+      expect(riskOf(equipment, { ...w, keptItems: 0 }).risk).toBe(6_700_000 + 100 * AMMO_STACK);
+    });
+
+    test('stays within the risk limit', () => {
+      const unlimited = optimizeGear(bank, player, monster, { ...opts, styles: ['melee'] }).melee[0];
+      expect(unlimited.equipment.feet?.name).toBe('Dragon boots');
+      expect(unlimited.equipment.neck?.name).toBe('Amulet of fury');
+      expect(unlimited.risk).toBeUndefined();
+
+      // only 3 of the 4 expensive items can be kept, so one of them has to go
+      const expensiveItems = (l: OptimizedLoadout) => Object.values(l.equipment)
+        .filter((i) => i && (values[i.id] || 0) > 100_000).length;
+      expect(expensiveItems(unlimited)).toBe(4);
+      const result = optimizeGear(bank, player, monster, wildernessOpts(100_000));
+      const best = result.melee[0];
+      expect(expensiveItems(best)).toBe(3);
+      expect(best.dps).toBeLessThan(unlimited.dps);
+      for (const l of result.melee) {
+        expect(l.risk!.risk).toBeLessThanOrEqual(100_000);
+        expect(l.risk!.keptSlots.length).toBeLessThanOrEqual(3);
+      }
+      // the dragon defender is untradeable, so it's free
+      expect(best.equipment.shield?.name).toBe('Dragon defender');
+      expect(best.risk!.untradeableSlots).toContain('shield');
+
+      // with Protect Item, all 4 are kept
+      const protectItem = optimizeGear(bank, player, monster, wildernessOpts(100_000, 4)).melee[0];
+      expect(expensiveItems(protectItem)).toBe(4);
+      expect(protectItem.dps).toBeCloseTo(unlimited.dps);
+    });
+
+    test('a higher risk limit never gives less DPS', () => {
+      let previous = 0;
+      for (const maxRisk of [0, 30_000, 250_000, 2_000_000, 10_000_000]) {
+        const best = optimizeGear(bank, player, monster, wildernessOpts(maxRisk, 0)).melee[0];
+        expect(best.risk!.risk).toBeLessThanOrEqual(maxRisk);
+        expect(best.dps).toBeGreaterThanOrEqual(previous - 1e-9);
+        previous = best.dps;
+      }
+    });
+
+    test('can skip untradeables', () => {
+      const best = optimizeGear(bank, player, monster, wildernessOpts(100_000, 3, true)).melee[0];
+      expect(best.equipment.shield?.name).not.toBe('Dragon defender');
+      expect(best.equipment.feet?.name).not.toBe('Climbing boots');
+      expect(best.risk!.untradeableSlots).toEqual([]);
     });
   });
 

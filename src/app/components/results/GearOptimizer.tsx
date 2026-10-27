@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { toJS } from 'mobx';
 import { toast } from 'react-toastify';
-import { IconLock, IconTrash, IconX } from '@tabler/icons-react';
+import {
+  IconAlertTriangle, IconLock, IconRefresh, IconShieldCheckFilled, IconTrash, IconX,
+} from '@tabler/icons-react';
 import { useStore } from '@/state';
 import { useCalc } from '@/worker/CalcWorker';
 import { OptimizeGearRequest, WorkerRequestType } from '@/worker/CalcWorkerTypes';
@@ -27,9 +29,12 @@ import feetSlot from '@/public/img/slots/feet.png';
 import ringSlot from '@/public/img/slots/ring.png';
 import { resolveEquipment, resolveOwnedEquipment } from '@/lib/BankImport';
 import {
-  LoadoutAlternative, OPTIMIZER_STYLES, OptimizedLoadout, OptimizerJob, OptimizerProgress, OptimizerResult, OptimizerStyle,
-  StyleSearchSummary, TrainingSkill, searchedStyles,
+  keptItemsCount, LoadoutAlternative, OPTIMIZER_STYLES, OptimizedLoadout, OptimizerJob, OptimizerProgress, OptimizerResult,
+  OptimizerStyle, StyleSearchSummary, TrainingSkill, searchedStyles,
 } from '@/lib/GearOptimizer';
+import {
+  formatGp, itemValue, parseGp, priceIdsFor,
+} from '@/lib/ItemPrices';
 import {
   EquipmentPiece, Player, PlayerEquipment, PlayerSkills,
 } from '@/types/Player';
@@ -143,18 +148,25 @@ const alternativeTooltip = (loadout: OptimizedLoadout, alt: LoadoutAlternative) 
  * The difference with the result below, coloured by whether it's better (green) or worse (red). Hidden if it rounds to
  * zero.
  */
-const Delta: React.FC<{ value: number, precision: number, lowerIsBetter?: boolean, tooltip: string }> = ({
-  value, precision, lowerIsBetter, tooltip,
+const Delta: React.FC<{
+  value: number,
+  precision: number,
+  lowerIsBetter?: boolean,
+  tooltip: string,
+  /** Formats the (positive) difference, instead of showing it to `precision` decimals. */
+  format?: (n: number) => string,
+}> = ({
+  value, precision, lowerIsBetter, tooltip, format,
 }) => {
   if (Math.abs(value) < 0.5 * 10 ** -precision) return null;
   const better = lowerIsBetter ? value < 0 : value > 0;
   return (
     <span
-      className={`ml-1 text-xs font-normal ${better ? 'text-green-800 dark:text-green-200' : 'text-red-400 dark:text-red-200'}`}
+      className={`ml-1 text-xs font-semibold ${better ? 'text-green-400 dark:text-green-300' : 'text-red-400 dark:text-red-300'}`}
       data-tooltip-id="tooltip"
       data-tooltip-content={tooltip}
     >
-      {`${value > 0 ? '+' : '−'}${Math.abs(value).toFixed(precision)}`}
+      {`${value > 0 ? '+' : '−'}${format ? format(Math.abs(value)) : Math.abs(value).toFixed(precision)}`}
     </span>
   );
 };
@@ -241,20 +253,37 @@ const LoadoutRow: React.FC<{
                 />
               );
             }
+            const kept = loadout.risk?.keptSlots.includes(slot);
             return (
               <button
                 key={slot}
                 type="button"
-                className="w-7 h-7 flex items-center justify-center bg-body-100 dark:bg-dark-400 rounded hover:ring-2 hover:ring-red-400"
+                className="relative w-7 h-7 flex items-center justify-center bg-body-100 dark:bg-dark-400 rounded hover:ring-2 hover:ring-red-400"
                 data-tooltip-id="tooltip"
-                data-tooltip-content={`${slot}: ${item.name} (click to exclude it from future searches)`}
+                data-tooltip-content={`${slot}: ${item.name}${kept ? ' (kept on death)' : ''} (click to exclude it from future searches)`}
                 aria-label={`Exclude ${item.name}`}
                 onClick={() => store.toggleExcludedItem(item.id)}
               >
                 {item.image && <LazyImage responsive src={getCdnImage(`equipment/${item.image}`)} alt={item.name} />}
+                {kept && (
+                  <IconShieldCheckFilled
+                    size={12}
+                    className="absolute -top-1 -right-1 text-green-700 dark:text-green-300"
+                    aria-label="Kept on death"
+                  />
+                )}
               </button>
             );
           })}
+          {loadout.risk && loadout.risk.untradeableSlots.length > 0 && (
+            <div
+              className="w-7 h-7 flex items-center justify-center text-orange-400 dark:text-orange-300"
+              data-tooltip-id="tooltip"
+              data-tooltip-content={`Untradeables at risk: ${loadout.risk.untradeableSlots.map((s) => loadout.equipment[s]!.name).join(', ')}. They have no GE price, so they count as free. Depending on the item and the Wilderness level, they may be lost, turn into coins for your killer, or need repairing.`}
+            >
+              <IconAlertTriangle size={20} aria-label="Untradeables at risk" />
+            </div>
+          )}
         </div>
         {loadout.alternatives.length > 0 && (
           <div className="flex flex-wrap items-center gap-1 mt-1 text-xs text-gray-500 dark:text-gray-300">
@@ -307,6 +336,23 @@ const LoadoutRow: React.FC<{
           </>
         ) : '-----'}
       </td>
+      {loadout.risk && (
+        <td className="px-2 py-1 text-right whitespace-nowrap">
+          <div>
+            {formatGp(loadout.risk.risk)}
+            {next?.risk && (
+              <Delta
+                value={loadout.risk.risk - next.risk.risk}
+                precision={0}
+                lowerIsBetter
+                format={formatGp}
+                tooltip={`Risk compared with #${rank + 1}`}
+              />
+            )}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-300">{`of ${formatGp(loadout.risk.total)}`}</div>
+        </td>
+      )}
       <td className="px-2 py-1 text-right whitespace-nowrap">{`${loadout.weight.toFixed(1)} kg`}</td>
       <td className="px-2 py-1">
         <div className="flex gap-1 justify-end">
@@ -787,8 +833,8 @@ const PlayerSettings: React.FC = observer(() => {
   const [tab, setTab] = useState<SettingsTab>('skills');
 
   return (
-    <div className="w-full max-w-[350px] shrink-0 flex flex-col rounded-lg overflow-hidden border border-body-300 dark:border-dark-200 bg-tile dark:bg-dark-300">
-      <div className="flex justify-center items-center bg-body-100 dark:bg-dark-400 border-b border-body-400 dark:border-dark-200 px-4 py-3 gap-1">
+    <div className="w-full max-w-[350px] shrink-0 flex flex-col rounded-lg border border-body-300 dark:border-dark-200 bg-tile dark:bg-dark-300">
+      <div className="flex justify-center items-center rounded-t-lg bg-body-100 dark:bg-dark-400 border-b border-body-400 dark:border-dark-200 px-4 py-3 gap-1">
         <PlayerTab name="Skills" isActive={tab === 'skills'} image={skillsTab} onClick={() => setTab('skills')} />
         <PlayerTab name="Prayer" isActive={tab === 'prayer'} image={prayerTab} onClick={() => setTab('prayer')} />
         <PlayerTab name="Locked equipment" isActive={tab === 'equipment'} image={equipmentTab} onClick={() => setTab('equipment')} />
@@ -830,13 +876,123 @@ const PlayerSettings: React.FC = observer(() => {
   );
 });
 
+/** An amount of gp, typed like 500k or 1.2m. The value is only changed once the input is valid. */
+const GpInput: React.FC<{ id: string, label: string, value: number, onChange: (gp: number) => void }> = ({
+  id, label, value, onChange,
+}) => {
+  const [text, setText] = useState(formatGp(value));
+  useEffect(() => setText(formatGp(value)), [value]);
+  const valid = Number.isFinite(parseGp(text));
+
+  return (
+    <input
+      id={id}
+      type="text"
+      aria-label={label}
+      inputMode="decimal"
+      className={`form-control w-24 ${valid ? '' : 'ring-2 ring-red-400'}`}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const gp = parseGp(e.target.value);
+        if (Number.isFinite(gp)) onChange(gp);
+      }}
+      onBlur={() => setText(formatGp(value))}
+    />
+  );
+};
+
+/**
+ * The wilderness mode options: limits how much the setups risk losing on death.
+ * @param priceIds - the items whose prices the search needs
+ */
+const WildernessOptions: React.FC<{ priceIds: number[] }> = observer(({ priceIds }) => {
+  const store = useStore();
+  const { wilderness } = store.optimizerSettings;
+  const [refreshing, setRefreshing] = useState(false);
+  const update = (change: Partial<typeof wilderness>) => store.updateOptimizerSettings({ wilderness: { ...wilderness, ...change } });
+
+  const fetchedAt = priceIds.map((id) => store.itemPrices[id]?.fetchedAt).filter(isDefined);
+  const oldest = fetchedAt.length > 0 ? Math.min(...fetchedAt) : undefined;
+  const kept = keptItemsCount(wilderness);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await store.loadItemPrices(priceIds, true);
+    } catch (e) {
+      console.error('[GearOptimizer] Failed to refresh prices', e);
+      toast.error('Failed to refresh the GE prices.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return (
+    <div className="my-3">
+      <Toggle
+        checked={wilderness.enabled}
+        setChecked={(enabled) => update({ enabled })}
+        label={<span className="font-bold">Wilderness</span>}
+      />
+      <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
+        Only return setups that lose at most this much on death, after your most valuable items are kept. Uses GE prices,
+        and turns on &quot;In the Wilderness&quot; for the wilderness weapons.
+      </p>
+      {wilderness.enabled && (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="text-xs">Max risk</span>
+            <GpInput id="gear-optimizer-max-risk" label="Max risk (gp)" value={wilderness.maxRisk} onChange={(maxRisk) => update({ maxRisk })} />
+            <span className="text-xs text-gray-500 dark:text-gray-300">{`gp (${kept} item${kept === 1 ? '' : 's'} kept)`}</span>
+          </div>
+          <div className="flex flex-wrap gap-x-6 mt-1">
+            <Toggle checked={wilderness.protectItem} setChecked={(protectItem) => update({ protectItem })} label="Protect Item" />
+            <Toggle checked={wilderness.skulled} setChecked={(skulled) => update({ skulled })} label="Skulled" />
+            <Toggle
+              checked={wilderness.skipUntradeables}
+              setChecked={(skipUntradeables) => update({ skipUntradeables })}
+              label={(
+                <span
+                  data-tooltip-id="tooltip"
+                  data-tooltip-content="Untradeables have no GE price, so they count as free, but they may be lost or need repairing. Locked items are still used."
+                >
+                  Skip untradeables
+                </span>
+              )}
+            />
+          </div>
+          <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-300 mt-1">
+            {oldest
+              ? `GE prices from ${new Date(oldest).toLocaleDateString()}`
+              : 'GE prices are fetched from the Weird Gloop API when you search.'}
+            {oldest && (
+              <button
+                type="button"
+                className="hover:text-orange-500 transition-colors disabled:opacity-50"
+                disabled={refreshing}
+                onClick={refresh}
+                aria-label="Refresh prices"
+                data-tooltip-id="tooltip"
+                data-tooltip-content="Refresh prices (they're otherwise kept for 30 days)"
+              >
+                <IconRefresh size={14} className={refreshing ? 'animate-spin' : ''} />
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+});
+
 const GearOptimizer: React.FC = observer(() => {
   const calc = useCalc();
   const store = useStore();
   const { bank, monster } = store;
   const settings = store.optimizerSettings;
   const {
-    styles, training, spell, minWeight, locked, prayers,
+    styles, training, spell, minWeight, locked, prayers, wilderness,
   } = settings;
 
   const [isOpen, setIsOpen] = useState(true);
@@ -858,6 +1014,7 @@ const GearOptimizer: React.FC = observer(() => {
     styles: OptimizerStyle[],
     spell?: string,
     base: SearchBase,
+    wilderness: boolean,
   }>();
 
   const equippedIds = JSON.stringify(store.loadouts.flatMap((l) => Object.values(l.equipment)
@@ -879,12 +1036,37 @@ const GearOptimizer: React.FC = observer(() => {
   const searchStyles = searchedStyles({ styles });
   const castSpell = searchStyles.includes('magic') ? spell : undefined;
 
+  // the items the search can use, and their variants, which a price can come from
+  const lockedItems = Object.values(locked).filter(isDefined);
+  const itemIds = [...new Set([...owned, ...lockedItems].map((i) => i.id))];
+  const priceIds = useMemo(() => [...new Set(itemIds.flatMap(priceIdsFor))], [JSON.stringify(itemIds)]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // used to tell whether the results are out of date
   const inputsKey = JSON.stringify([
     toJS(monster), toJS(settings.skills), toJS(settings.boosts), toJS(settings.buffs), owned.map((o) => o.id), toJS(prayers),
     toJS(locked), training ?? null, castSpell ? null : toJS(store.excludedSpells), minWeight, searchStyles, castSpell ?? null,
-    toJS(store.ignoredAmmo),
+    toJS(store.ignoredAmmo), wilderness.enabled ? toJS(wilderness) : null,
   ]);
+
+  /** The GE values of the items the search can use, fetching the ones that aren't cached. */
+  const loadValues = async (): Promise<Record<number, number> | undefined> => {
+    try {
+      await store.loadItemPrices(priceIds);
+    } catch (e) {
+      console.error('[GearOptimizer] Failed to load prices', e);
+      if (priceIds.some((id) => !store.itemPrices[id])) {
+        toast.error('Failed to load the GE prices for wilderness mode. Try again later.');
+        return undefined;
+      }
+      toast.warn('Failed to refresh the GE prices, so older prices are used.');
+    }
+    const values: Record<number, number> = {};
+    for (const id of itemIds) {
+      const value = itemValue(id, store.itemPrices);
+      if (value !== undefined) values[id] = value;
+    }
+    return values;
+  };
 
   const toggleStyle = (style: OptimizerStyle) => store.updateOptimizerSettings({
     styles: styles.includes(style) ? styles.filter((s) => s !== style) : [...styles, style],
@@ -898,6 +1080,11 @@ const GearOptimizer: React.FC = observer(() => {
     setNow(start);
     setProgress(undefined);
     const player = store.optimizerBasePlayer;
+    const values = wilderness.enabled ? await loadValues() : undefined;
+    if (wilderness.enabled && !values) {
+      setRunning(undefined);
+      return;
+    }
     const req: OptimizeGearRequest = {
       type: WorkerRequestType.OPTIMIZE_GEAR,
       data: {
@@ -913,6 +1100,12 @@ const GearOptimizer: React.FC = observer(() => {
           spell: castSpell,
           minWeight,
           styles: searchStyles,
+          wilderness: values && {
+            maxRisk: wilderness.maxRisk,
+            keptItems: keptItemsCount(wilderness),
+            values,
+            skipUntradeables: wilderness.skipUntradeables,
+          },
         },
       },
     };
@@ -923,10 +1116,11 @@ const GearOptimizer: React.FC = observer(() => {
         data: resp.payload,
         inputsKey,
         elapsed: performance.now() - start,
-        hadFilters: Object.keys(locked).length > 0 || !!training || minWeight > 0,
+        hadFilters: Object.keys(locked).length > 0 || !!training || minWeight > 0 || !!values,
         styles: searchStyles,
         spell: castSpell,
         base: { skills: player.skills, boosts: player.boosts, buffs: player.buffs },
+        wilderness: !!values,
       });
     } catch (e) {
       console.error('[GearOptimizer] Failed to optimize gear', e);
@@ -1043,6 +1237,7 @@ const GearOptimizer: React.FC = observer(() => {
                   <span className="text-xs text-gray-500 dark:text-gray-300">kg</span>
                 </div>
               </div>
+              <WildernessOptions priceIds={priceIds} />
             </div>
             {/* the first section's top margin is dropped, so that both columns line up */}
             <div className="flex-1 min-w-[260px] [&>*:first-child]:mt-0">
@@ -1112,7 +1307,7 @@ const GearOptimizer: React.FC = observer(() => {
                   <p className="text-gray-500 dark:text-gray-300">
                     {/* eslint-disable-next-line no-nested-ternary */}
                     {result.hadFilters
-                      ? "No usable setups found with the locked slots, training choice and minimum weight (for example, the locked weapon can't attack with this style, has no stance that trains the chosen skill, or your gear for this style can't reach the minimum weight)."
+                      ? "No usable setups found with the locked slots, training choice, minimum weight and max risk (for example, the locked weapon can't attack with this style, has no stance that trains the chosen skill, or your gear for this style can't reach the minimum weight or stay within the max risk)."
                       : style === 'magic' && result.spell
                         ? `No usable setups found that can cast ${result.spell}.`
                         : 'No usable setups found.'}
@@ -1134,6 +1329,15 @@ const GearOptimizer: React.FC = observer(() => {
                         >
                           Dmg taken
                         </th>
+                        {result.wilderness && (
+                          <th
+                            className="px-2 text-right cursor-help underline decoration-dotted"
+                            data-tooltip-id="tooltip"
+                            data-tooltip-content="The GE value you lose on death in the Wilderness, and the value of the whole set below it. The items with a shield are kept."
+                          >
+                            Risk
+                          </th>
+                        )}
                         <th className="px-2 text-right">Weight</th>
                         <th className="px-2"><span className="sr-only">Actions</span></th>
                       </tr>

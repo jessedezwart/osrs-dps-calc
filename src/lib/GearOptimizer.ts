@@ -81,6 +81,40 @@ export interface OptimizerOpts {
    * never returned. Setting this also makes the search go deeper, as the constraint makes single swaps less effective.
    */
   minWeight?: number;
+  /** Limits how much the setup risks losing on death in the Wilderness. */
+  wilderness?: WildernessOpts;
+}
+
+export interface WildernessOpts {
+  /** The most the setup may lose on death, in gp. */
+  maxRisk: number;
+  /** How many items are kept on death (see keptItemsCount). */
+  keptItems: number;
+  /** The GE value of each item, by ID. Items without one are untradeable, and count as free. */
+  values: Record<number, number>;
+  /** Never use untradeable items, unless they are locked. */
+  skipUntradeables?: boolean;
+}
+
+/** Ammo is lost as a whole stack, so it counts as this many of the item. */
+export const AMMO_STACK = 100;
+
+/**
+ * How many items are kept on death in the Wilderness: 3 normally, or 0 when skulled, plus 1 with Protect Item.
+ * @see https://oldschool.runescape.wiki/w/Items_Kept_on_Death
+ */
+export const keptItemsCount = ({ protectItem, skulled }: { protectItem: boolean, skulled: boolean }): number => (skulled ? 0 : 3)
+  + (protectItem ? 1 : 0);
+
+export interface Risk {
+  /** The value lost on death, in gp. */
+  risk: number;
+  /** The value of all the (tradeable) items, in gp. */
+  total: number;
+  /** The slots of the items that are kept on death. */
+  keptSlots: (keyof PlayerEquipment)[];
+  /** The slots of untradeable items, which count as free (but may be lost or need repairing). */
+  untradeableSlots: (keyof PlayerEquipment)[];
 }
 
 export interface OptimizedLoadout {
@@ -97,6 +131,8 @@ export interface OptimizedLoadout {
   npcDps: number;
   /** The average damage taken per kill, or undefined if the monster can't be killed. */
   avgDmgTaken?: number;
+  /** The value lost on death in the Wilderness, and which items are kept. Only set in wilderness mode. */
+  risk?: Risk;
   /**
    * Items that give exactly the same DPS in a slot, but trade the chosen item's defensive stats for more offensive
    * stats that don't currently make a difference (e.g. +1 strength that doesn't reach the next max hit).
@@ -204,6 +240,13 @@ const MAX_WEIGHT_REPAIR_STEPS = 20;
  */
 const WEIGHT_TRADE_FRACTIONS = [0.02, 0.05, 0.1, 0.2, 0.4, 0.8];
 const WEIGHT_EPSILON = 1e-6;
+/** How many swaps can be made to bring a setup down to the risk limit before giving up on it. */
+const MAX_RISK_REPAIR_STEPS = 20;
+/**
+ * With a risk limit, the trade fractions (see WEIGHT_TRADE_FRACTIONS) are of DPS per this much gp over the limit, or per
+ * the limit itself if that's larger.
+ */
+const MIN_RISK_SCALE = 1_000_000;
 /**
  * The final step tries every combination of a shortlist of items per slot around each shown result, which finds
  * improvements that need many slots to change at once. This is how many combinations may be tried for the best result
@@ -220,6 +263,11 @@ const EXHAUSTIVE_MIN_CHUNK_SIZE = 5_000;
  * (spread over the minimum weight), so that heavy items that make room for better items elsewhere are shortlisted too.
  */
 const SHORTLIST_WEIGHT_FRACTION = 0.2;
+/**
+ * With a risk limit, shortlisted items that take the result over the limit (when swapped in alone) are ranked as if
+ * each risk scale (see MIN_RISK_SCALE) over it cost this fraction of the result's DPS, so cheaper items are shortlisted too.
+ */
+const SHORTLIST_RISK_FRACTION = 0.2;
 /** The most equal-DPS alternatives shown per result. */
 const MAX_ALTERNATIVES = 6;
 const SPELLS_TO_CONSIDER = 6;
@@ -349,6 +397,49 @@ export const equipmentWeight = (equipment: PlayerEquipment): number => SLOTS
 
 const meetsMinWeight = (c: { equipment: PlayerEquipment }, opts: OptimizerOpts) => !opts.minWeight
   || equipmentWeight(c.equipment) >= opts.minWeight - WEIGHT_EPSILON;
+
+/** The value an item counts for in its slot (ammo counts as a whole stack), or undefined if it's untradeable. */
+const slotValue = (item: EquipmentPiece, slot: keyof PlayerEquipment, wilderness: WildernessOpts): number | undefined => {
+  const value = wilderness.values[item.id];
+  if (value === undefined) return undefined;
+  return slot === 'ammo' ? value * AMMO_STACK : value;
+};
+
+/**
+ * How much the equipment risks on death in the Wilderness: the value of everything except the most valuable items,
+ * which are kept. Ammo is never kept, as only one of a stack would be. Untradeables count as free.
+ */
+export const riskOf = (equipment: PlayerEquipment, wilderness: WildernessOpts): Risk => {
+  const priced: [keyof PlayerEquipment, number][] = [];
+  const untradeableSlots: (keyof PlayerEquipment)[] = [];
+  for (const slot of SLOTS) {
+    const item = equipment[slot];
+    if (!item) continue;
+    const value = slotValue(item, slot, wilderness);
+    if (value === undefined) {
+      untradeableSlots.push(slot);
+    } else {
+      priced.push([slot, value]);
+    }
+  }
+
+  const keptSlots = priced
+    .filter(([slot]) => slot !== 'ammo')
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, wilderness.keptItems)
+    .map(([slot]) => slot);
+  const risk = priced.reduce((sum, [slot, value]) => (keptSlots.includes(slot) ? sum : sum + value), 0);
+  const total = priced.reduce((sum, [, value]) => sum + value, 0);
+  return {
+    risk, total, keptSlots, untradeableSlots,
+  };
+};
+
+const withinRisk = (c: { equipment: PlayerEquipment }, opts: OptimizerOpts) => !opts.wilderness
+  || riskOf(c.equipment, opts.wilderness).risk <= opts.wilderness.maxRisk;
+
+/** Whether the setup meets the minimum weight and the risk limit. */
+const isFeasible = (c: { equipment: PlayerEquipment }, opts: OptimizerOpts) => meetsMinWeight(c, opts) && withinRisk(c, opts);
 
 const isSpecialEffectItem = (item: EquipmentPiece) => SPECIAL_EFFECT_ITEMS.some((r) => r.test(item.name));
 
@@ -685,6 +776,55 @@ export class GearOptimizer {
     return meetsMinWeight(c, this.opts);
   }
 
+  private get hasRiskLimit(): boolean {
+    return !!this.opts.wilderness;
+  }
+
+  private risk(c: Config): number {
+    return this.opts.wilderness ? riskOf(c.equipment, this.opts.wilderness).risk : 0;
+  }
+
+  /** How far the setup is over the risk limit, in gp (0 if it's within it). */
+  private excessRisk(c: Config): number {
+    return this.opts.wilderness ? Math.max(0, this.risk(c) - this.opts.wilderness.maxRisk) : 0;
+  }
+
+  /** The amount of gp over the risk limit that the trade fractions are relative to (see MIN_RISK_SCALE). */
+  private get riskScale(): number {
+    return Math.max(this.opts.wilderness?.maxRisk || 0, MIN_RISK_SCALE);
+  }
+
+  private withinRisk(c: Config): boolean {
+    return withinRisk(c, this.opts);
+  }
+
+  private isFeasible(c: Config): boolean {
+    return isFeasible(c, this.opts);
+  }
+
+  /** The item's value (0 if untradeable), for keeping cheaper items when pruning. */
+  private itemValue(item: EquipmentPiece): number {
+    return this.opts.wilderness?.values[item.id] ?? 0;
+  }
+
+  /** Whether the item can't be used because it's untradeable and the user doesn't want to risk those. */
+  private isSkippedUntradeable(item: EquipmentPiece): boolean {
+    return !!this.opts.wilderness?.skipUntradeables && this.opts.wilderness.values[item.id] === undefined;
+  }
+
+  /**
+   * The stats to prune items by, plus the ones that the constraints make worth keeping: weight (heavier is better) with a
+   * minimum weight, and value (cheaper is better) with a risk limit. Risk only goes up with an item's value, so a cheaper
+   * item can never be worse for it.
+   */
+  private withConstraintStats(stats: number[], item: EquipmentPiece): number[] {
+    return [
+      ...stats,
+      ...(this.hasMinWeight ? [item.weight || 0] : []),
+      ...(this.hasRiskLimit ? [-this.itemValue(item)] : []),
+    ];
+  }
+
   public runJob<J extends OptimizerJob>(job: J): OptimizerJobResult<J> {
     this.useFamily(job.family);
     switch (job.kind) {
@@ -692,7 +832,7 @@ export class GearOptimizer {
         return this.plan() as OptimizerJobResult<J>;
       case 'refine': {
         const [c, s] = this.refine(job.start);
-        const usable = s.dps > 0 && this.meetsMinWeight(c);
+        const usable = s.dps > 0 && this.isFeasible(c);
         return (usable ? [c, s] : null) as OptimizerJobResult<J>;
       }
       case 'pairSwap':
@@ -718,8 +858,8 @@ export class GearOptimizer {
       return;
     }
 
-    // with a minimum weight, a heavier item can be worth keeping even if its stats are worse
-    const withWeight = (stats: number[], item: EquipmentPiece) => (this.hasMinWeight ? [...stats, item.weight || 0] : stats);
+    // a heavier or cheaper item can be worth keeping even if its stats are worse
+    const withConstraints = (stats: number[], item: EquipmentPiece) => this.withConstraintStats(stats, item);
 
     const slotCandidates: StyleState['slotCandidates'] = {};
     for (const slot of ARMOUR_SLOTS) {
@@ -728,11 +868,13 @@ export class GearOptimizer {
         slotCandidates[slot] = lockedItem ? [lockedItem] : [];
         continue;
       }
-      const items = this.owned.filter((i) => i.slot === slot && !(slot === 'ammo' && this.isIgnoredAmmo(i)));
+      const items = this.owned.filter((i) => i.slot === slot
+        && !(slot === 'ammo' && this.isIgnoredAmmo(i))
+        && !this.isSkippedUntradeable(i));
       // ammo is pruned per weapon (see getAmmoCandidates), as which ammo is comparable depends on the weapon
       slotCandidates[slot] = slot === 'ammo'
         ? items
-        : pruneDominated(items, family, (i) => withWeight(relevantStats(i, family), i));
+        : pruneDominated(items, family, (i) => withConstraints(relevantStats(i, family), i));
     }
 
     this.state = {
@@ -742,7 +884,7 @@ export class GearOptimizer {
       unusedAmmoCandidates: pruneDominated(
         slotCandidates.ammo || [],
         family,
-        (i) => withWeight(unusedAmmoStats(i, family), i),
+        (i) => withConstraints(unusedAmmoStats(i, family), i),
       ),
       ammoCandidatesByWeapon: new Map(),
       spellCandidates: [],
@@ -851,6 +993,7 @@ export class GearOptimizer {
     const startScore = this.score(start);
     const weapon = start.equipment.weapon;
     const lambda = this.hasMinWeight ? (SHORTLIST_WEIGHT_FRACTION * startScore.dps) / this.opts.minWeight! : 0;
+    const riskLambda = this.hasRiskLimit ? (SHORTLIST_RISK_FRACTION * startScore.dps) / this.riskScale : 0;
 
     const queues: { slot: keyof PlayerEquipment, items: (EquipmentPiece | null)[], next: [EquipmentPiece | null, number][] }[] = [];
     for (const slot of ARMOUR_SLOTS) {
@@ -858,9 +1001,10 @@ export class GearOptimizer {
       const next = this.getSlotOptions(slot, weapon)
         .filter((item) => (item?.id ?? null) !== (current?.id ?? null))
         .map((item): [EquipmentPiece | null, number] => {
-          const dpsLoss = startScore.dps - this.score(withSlot(start, slot, item)).dps;
+          const swapped = withSlot(start, slot, item);
+          const dpsLoss = startScore.dps - this.score(swapped).dps;
           const weightGain = (item?.weight || 0) - (current?.weight || 0);
-          return [item, dpsLoss - lambda * weightGain];
+          return [item, dpsLoss - lambda * weightGain + riskLambda * this.excessRisk(swapped)];
         })
         .sort(([, a], [, b]) => a - b);
       if (next.length > 0) queues.push({ slot, items: [current], next });
@@ -902,7 +1046,7 @@ export class GearOptimizer {
     const ret: JobResults['exhaust'] = { best: null, tried: 0 };
     const tryFrom = (i: number) => {
       if (i === slots.length) {
-        if (!meetsMinWeight({ equipment }, this.opts)) return;
+        if (!isFeasible({ equipment }, this.opts)) return;
         const c: Config = { ...start, equipment: { ...equipment } };
         const s = this.evaluate(c);
         ret.tried += 1;
@@ -938,6 +1082,7 @@ export class GearOptimizer {
         accuracy: s.accuracy,
         weight: equipmentWeight(c.equipment),
         ...this.damageTaken(c),
+        ...(this.opts.wilderness && { risk: riskOf(c.equipment, this.opts.wilderness) }),
         alternatives: this.findAlternatives(c, s),
       },
     };
@@ -969,7 +1114,7 @@ export class GearOptimizer {
     if (!ammo || this.isLocked('ammo') || weaponRequiresAmmo(c.equipment.weapon) || tiebreakStat(ammo) > 0) return [c, s];
 
     const without = withSlot(c, 'ammo', null);
-    if (!this.meetsMinWeight(without)) return [c, s];
+    if (!this.isFeasible(without)) return [c, s];
     const withoutScore = this.score(without);
     return withoutScore.dps < s.dps - EPSILON ? [c, s] : [without, withoutScore];
   }
@@ -994,7 +1139,7 @@ export class GearOptimizer {
         if (!offensiveStats(item, this.family, ignoreRangedStats).some((v, k) => v > chosenStats[k])) continue;
 
         const candidate = withSlot(c, slot, item);
-        if (!this.meetsMinWeight(candidate)) continue;
+        if (!this.isFeasible(candidate)) continue;
         if (Math.abs(this.score(candidate).dps - s.dps) > EPSILON) continue;
 
         ret.push({ slot, item, betterAfterDrain: this.findDrainAdvantage(c, candidate) });
@@ -1084,7 +1229,7 @@ export class GearOptimizer {
       const weapon = this.locked.weapon ?? null;
       return getStyles(weapon, family, this.opts).length > 0 ? [weapon] : [];
     }
-    const ownedWeapons = this.owned.filter((i) => i.slot === 'weapon');
+    const ownedWeapons = this.owned.filter((i) => i.slot === 'weapon' && !this.isSkippedUntradeable(i));
     // poisoned darts share the same name as the regular ones, and only one of each is needed
     const darts = [...new Map(ownedWeapons
       .filter((i) => DART_TIER[i.name] !== undefined && !this.isIgnoredAmmo(i))
@@ -1193,7 +1338,7 @@ export class GearOptimizer {
       candidates = pruneDominated(
         ammo.filter((a) => ammoWorksWith(weapon!, a)),
         this.family,
-        (i) => (this.hasMinWeight ? [...relevantStats(i, this.family), i.weight || 0] : relevantStats(i, this.family)),
+        (i) => this.withConstraintStats(relevantStats(i, this.family), i),
         firedAmmoEffectOf,
       );
       this.state.ammoCandidatesByWeapon.set(key, candidates);
@@ -1218,18 +1363,20 @@ export class GearOptimizer {
   }
 
   /**
-   * Step 3 for a single start config. With a minimum weight, the descent is also started from a few setups that spread
-   * the weight over the slots in different ways (see descendRelaxed), as reaching the weight with e.g. one very heavy
-   * item gets stuck: no single or pair swap can get rid of it without going under the weight.
+   * Step 3 for a single start config. With a minimum weight or a risk limit, the descent is also started from a few
+   * setups that meet them in different ways (see descendRelaxed), as e.g. reaching the weight with one very heavy item
+   * gets stuck: no single or pair swap can get rid of it without going under the weight.
    */
   private refine(start: Config): [Config, Score] {
     let best = this.descend(start);
-    if (!this.hasMinWeight) return best;
+    if (!this.hasMinWeight && !this.hasRiskLimit) return best;
 
     const startDps = this.pickWeaponSettings(start)[1].dps;
     for (const fraction of WEIGHT_TRADE_FRACTIONS) {
-      const r = this.descend(this.descendRelaxed(start, (fraction * startDps) / this.opts.minWeight!));
-      if (this.meetsMinWeight(r[0]) && (!this.meetsMinWeight(best[0]) || isBetter(r[1], best[1]))) {
+      const weightLambda = this.hasMinWeight ? (fraction * startDps) / this.opts.minWeight! : 0;
+      const riskLambda = this.hasRiskLimit ? (fraction * startDps) / this.riskScale : 0;
+      const r = this.descend(this.descendRelaxed(start, weightLambda, riskLambda));
+      if (this.isFeasible(r[0]) && (!this.isFeasible(best[0]) || isBetter(r[1], best[1]))) {
         best = r;
       }
     }
@@ -1237,12 +1384,15 @@ export class GearOptimizer {
   }
 
   /**
-   * Coordinate descent on DPS plus a bonus of `lambda` DPS per kg (up to the minimum weight), ignoring the minimum
-   * weight itself (a Lagrangian relaxation of it). This spreads the weight over the slots where it costs the least DPS,
-   * so the result is a good place to start the constrained descent from.
+   * Coordinate descent on DPS plus a bonus of `weightLambda` DPS per kg (up to the minimum weight), minus
+   * `riskLambda` DPS per gp over the risk limit, ignoring the constraints themselves (a Lagrangian relaxation of them).
+   * This spreads the weight over the slots where it costs the least DPS, and drops the risk where that costs the least
+   * DPS, so the result is a good place to start the constrained descent from.
    */
-  private descendRelaxed(start: Config, lambda: number): Config {
-    const value = (c: Config, s: Score) => s.dps + lambda * Math.min(equipmentWeight(c.equipment), this.opts.minWeight!);
+  private descendRelaxed(start: Config, weightLambda: number, riskLambda: number): Config {
+    const value = (c: Config, s: Score) => s.dps
+      + (weightLambda > 0 ? weightLambda * Math.min(equipmentWeight(c.equipment), this.opts.minWeight!) : 0)
+      - riskLambda * this.excessRisk(c);
 
     let [best, bestScore] = this.pickWeaponSettings(start);
     let bestValue = value(best, bestScore);
@@ -1267,7 +1417,7 @@ export class GearOptimizer {
         }
       }
 
-      // the style and spell don't change the weight, so they can be compared on DPS alone
+      // the style and spell don't change the weight or risk, so they can be compared on DPS alone
       const repicked = this.pickWeaponSettings(best);
       if (isBetter(repicked[1], bestScore)) {
         [best, bestScore] = repicked;
@@ -1282,15 +1432,20 @@ export class GearOptimizer {
 
   /**
    * Greedy coordinate descent: repeatedly try every candidate in every armour slot, keeping any swap that improves
-   * the score (and keeps the setup at the minimum weight), until a full pass makes no improvement. If the start is
-   * under the minimum weight, it is first brought up to it.
+   * the score (and keeps the setup at the minimum weight and within the risk limit), until a full pass makes no
+   * improvement. If the start is over the risk limit or under the minimum weight, it is first brought within them.
    */
   private descend(start: Config): [Config, Score] {
     let [best, bestScore] = this.pickWeaponSettings(start);
+    if (!this.withinRisk(best)) {
+      [best, bestScore] = this.reduceRisk(best, bestScore);
+      // the setup can't get under the risk limit with this weapon, so it'll be dropped
+      if (!this.withinRisk(best)) return [best, bestScore];
+    }
     if (!this.meetsMinWeight(best)) {
       [best, bestScore] = this.addWeight(best, bestScore);
       // the setup can't reach the minimum weight with this weapon, so it'll be dropped
-      if (!this.meetsMinWeight(best)) return [best, bestScore];
+      if (!this.isFeasible(best)) return [best, bestScore];
     }
 
     for (let pass = 0; pass < MAX_DESCENT_PASSES; pass++) {
@@ -1303,7 +1458,7 @@ export class GearOptimizer {
         for (const item of this.getSlotOptions(slot, weapon)) {
           if ((best.equipment[slot]?.id ?? null) === (item?.id ?? null)) continue;
           const candidate = withSlot(best, slot, item);
-          if (!this.meetsMinWeight(candidate)) continue;
+          if (!this.isFeasible(candidate)) continue;
           const s = this.score(candidate);
           if (isBetter(s, bestScore)) {
             best = candidate;
@@ -1327,8 +1482,58 @@ export class GearOptimizer {
   }
 
   /**
-   * Brings the setup up to the minimum weight by swapping one armour slot at a time. If a single swap is enough, the
-   * highest scoring one is used. Otherwise, the swap that loses the least DPS per kg gained is made, and it tries again.
+   * Brings the setup down to the risk limit by swapping one armour slot at a time. If a single swap is enough, the
+   * highest scoring one is used. Otherwise, the swap that loses the least DPS per gp of risk removed is made, and it
+   * tries again.
+   */
+  private reduceRisk(start: Config, startScore: Score): [Config, Score] {
+    let current = start;
+    let currentScore = startScore;
+
+    for (let step = 0; step < MAX_RISK_REPAIR_STEPS && !this.withinRisk(current); step++) {
+      const weapon = current.equipment.weapon;
+      const currentRisk = this.risk(current);
+      let finished: [Config, Score] | null = null;
+      let partial: { c: Config, s: Score, cost: number, gain: number } | null = null;
+
+      for (const slot of ARMOUR_SLOTS) {
+        if (slot === 'shield' && weapon?.isTwoHanded) continue;
+
+        for (const item of this.getSlotOptions(slot, weapon)) {
+          if ((current.equipment[slot]?.id ?? null) === (item?.id ?? null)) continue;
+          const candidate = withSlot(current, slot, item);
+          const gain = currentRisk - this.risk(candidate);
+          if (gain <= 0) continue;
+
+          const s = this.score(candidate);
+          if (this.withinRisk(candidate)) {
+            if (!finished || isBetter(s, finished[1])) finished = [candidate, s];
+          } else if (!finished) {
+            const cost = (currentScore.dps - s.dps) / gain;
+            const cheaper = !partial || cost < partial.cost - EPSILON
+              || (Math.abs(cost - partial.cost) <= EPSILON && gain > partial.gain);
+            if (cheaper) {
+              partial = {
+                c: candidate, s, cost, gain,
+              };
+            }
+          }
+        }
+      }
+
+      if (finished) return finished;
+      if (!partial) break;
+      current = partial.c;
+      currentScore = partial.s;
+    }
+
+    return [current, currentScore];
+  }
+
+  /**
+   * Brings the setup up to the minimum weight by swapping one armour slot at a time (staying within the risk limit). If
+   * a single swap is enough, the highest scoring one is used. Otherwise, the swap that loses the least DPS per kg gained
+   * is made, and it tries again.
    */
   private addWeight(start: Config, startScore: Score): [Config, Score] {
     let current = start;
@@ -1347,7 +1552,7 @@ export class GearOptimizer {
           if ((current.equipment[slot]?.id ?? null) === (item?.id ?? null)) continue;
           const candidate = withSlot(current, slot, item);
           const gain = equipmentWeight(candidate.equipment) - currentWeight;
-          if (gain <= WEIGHT_EPSILON) continue;
+          if (gain <= WEIGHT_EPSILON || !this.withinRisk(candidate)) continue;
 
           const s = this.score(candidate);
           if (this.meetsMinWeight(candidate)) {
@@ -1416,11 +1621,20 @@ export class GearOptimizer {
     const topPerSlot = new Map<keyof PlayerEquipment, Array<EquipmentPiece | null>>();
     for (const slot of slots) {
       const options = this.getSlotOptions(slot, weapon);
-      const top = options
+      const ranked = options
         .map((item): [EquipmentPiece | null, Score] => [item, this.score(withSlot(current, slot, item))])
-        .sort(([, a], [, b]) => compareScores(a, b))
+        .sort(([, a], [, b]) => compareScores(a, b));
+      const top = ranked
         .slice(0, PAIR_CANDIDATES_PER_SLOT)
         .map(([item]) => item);
+      if (this.hasRiskLimit) {
+        // items cheap enough to not be kept make room for an expensive item in the other slot to be kept instead
+        const affordable = ranked
+          .filter(([item]) => !item || (slotValue(item, slot, this.opts.wilderness!) ?? 0) <= this.opts.wilderness!.maxRisk)
+          .slice(0, PAIR_CANDIDATES_PER_SLOT)
+          .map(([item]) => item);
+        top.push(...affordable.filter((i) => !top.includes(i)));
+      }
       if (this.hasMinWeight) {
         // heavy items make room for a lighter but stronger item in the other slot
         const heaviest = [...options]
@@ -1437,7 +1651,7 @@ export class GearOptimizer {
         for (const a of topPerSlot.get(slotA)!) {
           for (const b of topPerSlot.get(slotB)!) {
             const candidate = withSlot(withSlot(current, slotA, a), slotB, b);
-            if (!this.meetsMinWeight(candidate)) continue;
+            if (!this.isFeasible(candidate)) continue;
             const s = this.score(candidate);
             if (isBetter(s, found ? found[1] : currentScore)) {
               found = [candidate, s];
