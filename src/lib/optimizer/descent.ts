@@ -5,6 +5,7 @@ import {
 } from './constants';
 import { isBetter, withSlot } from './config';
 import { equipmentWeight } from './constraints';
+import { isSpecialEffectItem } from './items';
 import { Config, Score } from './types';
 
 /**
@@ -139,6 +140,13 @@ export const descend = (o: GearOptimizer, start: Config): [Config, Score] => {
           best = candidate;
           bestScore = s;
           improved = true;
+        } else if (item && isSpecialEffectItem(item)) {
+          // the effect may only apply with a different style or spell, e.g. an Elemental amulet with an elemental spell
+          const repicked = o.pickWeaponSettings(candidate);
+          if (isBetter(repicked[1], bestScore)) {
+            [best, bestScore] = repicked;
+            improved = true;
+          }
         }
       }
     }
@@ -156,16 +164,26 @@ export const descend = (o: GearOptimizer, start: Config): [Config, Score] => {
   return [best, bestScore];
 };
 
+/** The total strength bonus of the style (melee strength, ranged strength or magic damage). */
+const strengthBonus = (o: GearOptimizer, c: Config) => Object.values(c.equipment).reduce((sum, item) => {
+  if (!item) return sum;
+  if (o.family === 'melee') return sum + item.bonuses.str;
+  return sum + (o.family === 'ranged' ? item.bonuses.ranged_str : item.bonuses.magic_str);
+}, 0);
+
 /**
  * Coordinate descent on DPS plus a bonus of `weightLambda` DPS per kg (up to the minimum weight), minus
  * `riskLambda` DPS per gp over the risk limit, ignoring the constraints themselves (a Lagrangian relaxation of them).
  * This spreads the weight over the slots where it costs the least DPS, and drops the risk where that costs the least
- * DPS, so the result is a good place to start the constrained descent from.
+ * DPS, so the result is a good place to start the constrained descent from. Likewise, `strengthLambda` DPS per point of
+ * strength bonus stacks it over the slots, to get past a max hit that no one item's strength reaches (see
+ * descendPastMaxHit).
  */
-const descendRelaxed = (o: GearOptimizer, start: Config, weightLambda: number, riskLambda: number): Config => {
+const descendRelaxed = (o: GearOptimizer, start: Config, weightLambda: number, riskLambda: number, strengthLambda = 0): Config => {
   const value = (c: Config, s: Score) => s.dps
     + (weightLambda > 0 ? weightLambda * Math.min(equipmentWeight(c.equipment), o.opts.minWeight!) : 0)
-    - riskLambda * o.excessRisk(c);
+    - riskLambda * o.excessRisk(c)
+    + (strengthLambda > 0 ? strengthLambda * strengthBonus(o, c) : 0);
 
   let [best, bestScore] = o.pickWeaponSettings(start);
   let bestValue = value(best, bestScore);
@@ -201,6 +219,16 @@ const descendRelaxed = (o: GearOptimizer, start: Config, weightLambda: number, r
     if (!improved) break;
   }
   return best;
+};
+
+/**
+ * Starts from the setup with more strength bonus, valuing each point at `fraction` of the start's DPS (spread over its
+ * strength bonus), and descends from there. The max hit only goes up at certain amounts of strength, so with low levels
+ * (and so low max hits) it can take a few items together to reach the next one, where none of them helps alone.
+ */
+export const descendPastMaxHit = (o: GearOptimizer, start: Config, startScore: Score, fraction: number): Config => {
+  const strengthLambda = (fraction * startScore.dps) / Math.max(1, strengthBonus(o, start));
+  return descendRelaxed(o, start, 0, 0, strengthLambda);
 };
 
 /**

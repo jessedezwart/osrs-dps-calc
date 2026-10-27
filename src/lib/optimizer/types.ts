@@ -204,6 +204,8 @@ export type OptimizerJob =
 
 export interface PlanResult extends Pick<StyleSearchSummary, 'weaponsScreened' | 'candidatesPerSlot' | 'spells' | 'weaponsRefined' | 'setStarts'> {
   starts: Config[];
+  /** The owned armour sets (without a weapon of their own), to try on the best refined weapons. */
+  setSeeds: Partial<Record<keyof PlayerEquipment, EquipmentPiece>>[];
 }
 
 export type JobResults = {

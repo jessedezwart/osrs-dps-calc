@@ -2,7 +2,7 @@ import { PlayerEquipment } from '@/types/Player';
 import { EquipmentCategory } from '@/enums/EquipmentCategory';
 import { getCombatStylesForCategory } from '@/utils';
 import type GearOptimizer from './GearOptimizer';
-import { ARMOUR_SLOTS, WEAPONS_FOR_SET_SEEDS, WEAPONS_TO_REFINE } from './constants';
+import { ARMOUR_SLOTS, WEAPONS_TO_REFINE } from './constants';
 import {
   compareScores, EMPTY_SCORE, isBetter, withSlot,
 } from './config';
@@ -25,6 +25,7 @@ const plan = (o: GearOptimizer): PlanResult => {
     spells: o.state.spellCandidates.length,
     weaponsRefined: 0,
     setStarts: 0,
+    setSeeds: [],
   };
   if (weapons.length === 0) return ret;
 
@@ -66,22 +67,9 @@ const plan = (o: GearOptimizer): PlanResult => {
     .filter(([, s]) => s.dps > 0)
     .sort(([, a], [, b]) => compareScores(a, b));
 
-  // the best weapons are refined, both as they are and with the set seeds
-  const starts: Config[] = [];
-  for (const [i, [c]] of ranked.slice(0, WEAPONS_TO_REFINE).entries()) {
-    starts.push(c);
-
-    if (i < WEAPONS_FOR_SET_SEEDS) {
-      for (const seed of o.getSetSeeds()) {
-        if (seed.weapon) continue;
-        let seeded = c;
-        for (const [slot, item] of Object.entries(seed)) {
-          seeded = withSlot(seeded, slot as keyof PlayerEquipment, item ?? null);
-        }
-        starts.push(seeded);
-      }
-    }
-  }
+  // the best weapons are refined (and the set seeds are tried on the best of those once they're refined, see
+  // searchStyle, as e.g. a weapon whose effect needs a specific amulet screens badly)
+  const starts: Config[] = ranked.slice(0, WEAPONS_TO_REFINE).map(([c]) => c);
   // seeds that include their own weapon (e.g. barrows sets)
   for (const seed of o.getSetSeeds()) {
     if (!seed.weapon) continue;
@@ -92,10 +80,11 @@ const plan = (o: GearOptimizer): PlanResult => {
     }
     starts.push(o.equipWeapon(seeded, seed.weapon)[0]);
   }
+  const setSeeds = o.getSetSeeds().filter((seed) => !seed.weapon);
 
   const weaponsRefined = Math.min(ranked.length, WEAPONS_TO_REFINE);
   return {
-    ...ret, starts, weaponsRefined, setStarts: starts.length - weaponsRefined,
+    ...ret, starts, setSeeds, weaponsRefined, setStarts: starts.length - weaponsRefined,
   };
 };
 

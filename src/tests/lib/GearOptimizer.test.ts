@@ -6,15 +6,36 @@ import {
 import { Prayer } from '@/enums/Prayer';
 import { CombatStyleStance } from '@/types/PlayerCombatStyle';
 import { resolveOwnedEquipment } from '@/lib/BankImport';
+import { availableEquipment } from '@/lib/Equipment';
 import { CAST_STANCES } from '@/lib/constants';
 import { EquipmentPiece } from '@/types/Player';
 import { findEquipmentById, getTestMonster, getTestPlayer } from '@/tests/utils/TestUtils';
 
 const owned = (ids: number[]): EquipmentPiece[] => resolveOwnedEquipment(ids.map((id) => ({ id, name: '', quantity: 1 })));
+const ownedByName = (names: string[]): EquipmentPiece[] => owned(names.map((name) => {
+  const item = availableEquipment.find((e) => e.name === name);
+  if (!item) throw new Error(`No item named ${name}`);
+  return item.id;
+}));
 
 const monster = getTestMonster('Abyssal demon');
 const player = getTestPlayer(monster);
 const opts = { prayers: [Prayer.PIETY, Prayer.RIGOUR, Prayer.AUGURY] };
+
+// a mid-to-late game bank, with a bit of everything
+const largeBank = owned([
+  // melee
+  4151, 12954, 1303, 4587, 1249, 1434, 1377, 3204, 7158, 4153, 19675, 27021, 30955, 28792, 10887, 25979,
+  24699, 11037, 4726, 4755, 4747, 4888, 4716, 4894, 4900, 4724, 4728, 4730, 4745, 4749, 4753, 4757,
+  11665, 11664, 11663, 13072, 13073, 8842, 6570, 6585, 26782, 26675, 7462, 11840, 26770, 26768,
+  21301, 21304, 6524, 6522, 1163, 1127, 1079, 1201, 4131, 24271, 3122, 29043, 12486, 1187, 4087, 4585,
+  // ranged
+  9185, 9243, 9242, 9245, 9144, 23983, 4734, 4740, 4940, 12851, 859, 861, 892, 4160, 31583, 811, 810,
+  2503, 2497, 2491, 22109, 19930, 2577, 10368, 28869, 28872, 29031, 805, 868, 830,
+  // magic
+  4675, 1401, 4710, 4714, 12658, 2415, 28585, 30634, 4089, 4091, 4093, 4095, 4097, 26914, 26850,
+  21791, 12612, 29889, 30957, 29084, 28988, 9097, 26969, 34428, 30638,
+]);
 
 describe('pruneDominated', () => {
   test('removes items with strictly worse stats', () => {
@@ -345,7 +366,8 @@ describe('optimizeGear', () => {
     // Abyssal whip, Dragon defender, Obsidian platelegs, Torag's platelegs
     const bank = owned([4151, 20463, 21304, 4751]);
     const boosted = getTestPlayer(monster, { boosts: { atk: 10, str: 10 } });
-    const best = optimizeGear(bank, boosted, monster, opts).melee[0];
+    // only Lash, as with Flick the +1 strength does change the max hit
+    const best = optimizeGear(bank, boosted, monster, { ...opts, training: 'shared' }).melee[0];
 
     // the +1 strength doesn't change the max hit, so the legs with more defence are picked...
     expect(best.equipment.legs?.name).toBe("Torag's platelegs");
@@ -502,20 +524,69 @@ describe('optimizeGear', () => {
     });
   });
 
+  // setups that need several things to change at once, which single and pair swaps can't find on their own
+  describe('escaping local optima', () => {
+    const noTask = { buffs: { onSlayerTask: false } };
+    const atLevel = (level: number) => ({
+      ...noTask,
+      skills: {
+        atk: level, str: level, def: level, ranged: level, magic: level, prayer: level, hp: level,
+      },
+    });
+    const ogress = getTestMonster('Ogress Warrior', '1');
+
+    test('tries the spells with an item whose effect only applies to some of them', () => {
+      // an Elemental amulet only helps with an elemental spell (against a monster weak to it), but the spell is only
+      // picked once the amulet is worn
+      const bank = ownedByName(['Twinflame staff', "Ahrim's staff", 'Elemental amulet', 'Amulet of fury',
+        'Mystic hat', 'Mystic robe top', 'Mystic robe bottom', 'Mystic gloves']);
+      const best = optimizeGear(bank, getTestPlayer(ogress), ogress, { ...opts, styles: ['magic'] }).magic[0];
+      expect(best.equipment.neck?.name).toBe('Elemental amulet');
+      expect(best.spell?.name).toMatch(/^Earth /);
+      expect(best.equipment.weapon?.name).toBe('Twinflame staff');
+    });
+
+    test('tries the other attack styles with an item that only helps with them', () => {
+      // Abyssal whip, Dragon defender, Obsidian platelegs, Torag's platelegs. The +1 strength of the obsidian only
+      // raises the max hit with Flick, which is only picked once they're worn.
+      const bank = owned([4151, 20463, 21304, 4751]);
+      const best = optimizeGear(bank, getTestPlayer(monster, { boosts: { atk: 10, str: 10 } }), monster, opts).melee[0];
+      expect(best.equipment.legs?.name).toBe('Obsidian platelegs');
+      expect(best.style.name).toBe('Flick');
+    });
+
+    test('tries the armour sets on the best weapons once they are refined', () => {
+      // the Twinflame staff does badly with the screening armour, as it needs the Elemental amulet and an elemental spell
+      const result = optimizeGear(largeBank, getTestPlayer(ogress, noTask), ogress, { ...opts, styles: ['magic'] });
+      const twinflame = result.magic.find((l) => l.equipment.weapon?.name === 'Twinflame staff');
+      expect(twinflame?.equipment.head?.name).toBe('Void mage helm');
+      expect(twinflame?.equipment.neck?.name).toBe('Elemental amulet');
+    });
+
+    test('takes off a whole set when other armour is better', () => {
+      // void beats any one piece of the other armour, so it can only be left by changing all of its pieces at once
+      const crab = getTestMonster('Sand Crab', 'Active');
+      const result = optimizeGear(largeBank, getTestPlayer(crab, atLevel(40)), crab, {
+        prayers: [Prayer.ULTIMATE_STRENGTH, Prayer.INCREDIBLE_REFLEXES], styles: ['melee'],
+      });
+      const whip = result.melee.find((l) => l.equipment.weapon?.name === 'Abyssal whip');
+      expect(whip?.equipment.head?.name).not.toMatch(/^Void/);
+      expect(whip?.equipment.body?.name).not.toMatch(/void/);
+    });
+
+    test('stacks strength over several slots to reach the next max hit', () => {
+      // with low levels, the max hit only goes up with a few items' strength together, where none of them helps alone
+      const giant = getTestMonster('Hill Giant');
+      const result = optimizeGear(largeBank, getTestPlayer(giant, atLevel(30)), giant, { styles: ['melee'] });
+      const blade = result.melee.find((l) => l.equipment.weapon?.name === 'Colossal blade');
+      expect(blade?.equipment.head?.name).toBe('Neitiznot faceguard');
+      expect(blade?.equipment.body?.name).toBe('Blood Moon chestplate');
+      expect(blade?.equipment.legs?.name).toBe('Obsidian platelegs');
+    });
+  });
+
   test('handles a large bank in reasonable time', () => {
-    const bank = owned([
-      // melee
-      4151, 12954, 1303, 4587, 1249, 1434, 1377, 3204, 7158, 4153, 19675, 27021, 30955, 28792, 10887, 25979,
-      24699, 11037, 4726, 4755, 4747, 4888, 4716, 4894, 4900, 4724, 4728, 4730, 4745, 4749, 4753, 4757,
-      11665, 11664, 11663, 13072, 13073, 8842, 6570, 6585, 26782, 26675, 7462, 11840, 26770, 26768,
-      21301, 21304, 6524, 6522, 1163, 1127, 1079, 1201, 4131, 24271, 3122, 29043, 12486, 1187, 4087, 4585,
-      // ranged
-      9185, 9243, 9242, 9245, 9144, 23983, 4734, 4740, 4940, 12851, 859, 861, 892, 4160, 31583, 811, 810,
-      2503, 2497, 2491, 22109, 19930, 2577, 10368, 28869, 28872, 29031, 805, 868, 830,
-      // magic
-      4675, 1401, 4710, 4714, 12658, 2415, 28585, 30634, 4089, 4091, 4093, 4095, 4097, 26914, 26850,
-      21791, 12612, 29889, 30957, 29084, 28988, 9097, 26969, 34428, 30638,
-    ]);
+    const bank = largeBank;
     // the full exhaustive search takes minutes on a single thread, so it gets a small budget here
     const budget = 20_000;
     const withoutExhaustive = optimizeGear(bank, player, monster, { ...opts, exhaustiveBudget: 0 });
@@ -533,7 +604,7 @@ describe('optimizeGear', () => {
       // the exhaustive search only ever improves the results
       expect(result[style][0].dps).toBeGreaterThanOrEqual(withoutExhaustive[style][0].dps);
     }
-    expect(withoutExhaustive.evaluations).toBeLessThan(30000);
+    expect(withoutExhaustive.evaluations).toBeLessThan(40000);
     // the best result per style gets the budget, and the other 4 a quarter each
     expect(result.evaluations).toBeLessThanOrEqual(withoutExhaustive.evaluations + OPTIMIZER_STYLES.length * 2 * budget);
   }, 120000);

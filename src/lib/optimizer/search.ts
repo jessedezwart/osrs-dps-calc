@@ -1,14 +1,24 @@
-import { EquipmentPiece, Player } from '@/types/Player';
+import { EquipmentPiece, Player, PlayerEquipment } from '@/types/Player';
 import { Monster } from '@/types/Monster';
 import GearOptimizer from './GearOptimizer';
-import { EXHAUSTIVE_BUDGET, EXHAUSTIVE_OTHERS_FRACTION, PAIR_SWAP_RESULTS } from './constants';
-import { compareScores, isBetter } from './config';
+import {
+  EXHAUSTIVE_BUDGET, EXHAUSTIVE_OTHERS_FRACTION, PAIR_SWAP_RESULTS, RESULTS_PER_WEAPON, WEAPONS_FOR_SET_SEEDS,
+} from './constants';
+import { compareScores, isBetter, withSlot } from './config';
 import { splitShortlist } from './exhaustive';
 import { searchedStyles } from './styles';
 import {
-  FinishedLoadout, JobOutcome, JobResults, OptimizerJob, OptimizerOpts, OptimizerProgressCallback, OptimizerResult,
+  Config, FinishedLoadout, JobOutcome, JobResults, OptimizerJob, OptimizerOpts, OptimizerProgressCallback, OptimizerResult,
   OptimizerStyle, PlanResult, ScoredConfig, Shortlist, StyleSearchResult, StyleSearchSummary,
 } from './types';
+
+const weaponKey = (c: Config) => {
+  const w = c.equipment.weapon;
+  return w ? `${w.name}:${w.itemVars?.blowpipeDartName || ''}` : '';
+};
+
+const sameEquipment = (a: Config, b: Config) => (Object.keys(a.equipment) as (keyof PlayerEquipment)[])
+  .every((slot) => (a.equipment[slot]?.id ?? null) === (b.equipment[slot]?.id ?? null));
 
 /**
  * The search for a single style, as a generator that yields each batch of jobs that can run in parallel, and receives
@@ -20,30 +30,54 @@ export function* searchStyle(
 ): Generator<OptimizerJob[], StyleSearchResult, unknown[]> {
   // steps 1 and 2
   const [plan] = (yield [{ kind: 'plan', family }]) as [PlanResult];
-  const { starts, ...planSummary } = plan;
+  const { starts, setSeeds, ...planSummary } = plan;
 
-  // 3. refine the best few weapons, and try the set seeds
-  const refined = (yield starts.map((start): OptimizerJob => ({ kind: 'refine', family, start }))) as (ScoredConfig | null)[];
+  // 3. refine the best few weapons...
+  const refined = ((yield starts.map((start): OptimizerJob => ({ kind: 'refine', family, start }))) as (ScoredConfig | null)[])
+    .filter((x): x is ScoredConfig => !!x)
+    .sort(([, a], [, b]) => compareScores(a, b));
 
-  // keep the best result per weapon (by name, as e.g. poisoned variants are functionally identical)
-  const bestPerWeapon = new Map<string, ScoredConfig>();
-  for (const r of refined) {
-    if (!r) continue;
-    const w = r[0].equipment.weapon;
-    const key = w ? `${w.name}:${w.itemVars?.blowpipeDartName || ''}` : '';
-    const existing = bestPerWeapon.get(key);
-    if (!existing || isBetter(r[1], existing[1])) {
-      bestPerWeapon.set(key, r);
-    }
+  // ...and then try the set seeds on the best of them, in their refined armour
+  const seedWeapons = new Map<string, Config>();
+  for (const [c] of refined) {
+    if (seedWeapons.size >= WEAPONS_FOR_SET_SEEDS) break;
+    if (!seedWeapons.has(weaponKey(c))) seedWeapons.set(weaponKey(c), c);
   }
-  const ranked = [...bestPerWeapon.values()].sort(([, a], [, b]) => compareScores(a, b));
+  const seeded = [...seedWeapons.values()].flatMap((c) => setSeeds.map((seed) => {
+    let s = c;
+    for (const [slot, item] of Object.entries(seed)) s = withSlot(s, slot as keyof PlayerEquipment, item ?? null);
+    return s;
+  }));
+  const refinedSeeded = seeded.length === 0 ? []
+    : ((yield seeded.map((start): OptimizerJob => ({ kind: 'refine', family, start }))) as (ScoredConfig | null)[])
+      .filter((x): x is ScoredConfig => !!x);
+  planSummary.setStarts += seeded.length;
+
+  // keep the best two results per weapon (by name, as e.g. poisoned variants are functionally identical), as the
+  // second best may be in different armour (e.g. without a set seed's void) that the swaps can still improve more
+  const perWeapon = new Map<string, ScoredConfig[]>();
+  for (const r of [...refined, ...refinedSeeded].sort(([, a], [, b]) => compareScores(a, b))) {
+    const key = weaponKey(r[0]);
+    const kept = perWeapon.get(key) ?? [];
+    if (kept.length < RESULTS_PER_WEAPON && !kept.some(([c]) => sameEquipment(c, r[0]))) kept.push(r);
+    perWeapon.set(key, kept);
+  }
+  const ranked = [...perWeapon.values()].sort(([[, a]], [[, b]]) => compareScores(a, b));
 
   // 4. try two-slot swaps on the best results, to escape set-ups where no single swap helps. These only ever improve a
   // result, so the shown results are always among these.
   const resultsPerStyle = opts.resultsPerStyle ?? 5;
-  const swapped = (yield ranked
+  const swappedAll = (yield ranked
     .slice(0, Math.max(resultsPerStyle, PAIR_SWAP_RESULTS))
+    .flat()
     .map(([start]): OptimizerJob => ({ kind: 'pairSwap', family, start }))) as ScoredConfig[];
+  const swappedPerWeapon = new Map<string, ScoredConfig>();
+  for (const r of swappedAll) {
+    const key = weaponKey(r[0]);
+    const existing = swappedPerWeapon.get(key);
+    if (!existing || isBetter(r[1], existing[1])) swappedPerWeapon.set(key, r);
+  }
+  const swapped = [...swappedPerWeapon.values()];
   const shown = [...swapped].sort(([, a], [, b]) => compareScores(a, b)).slice(0, resultsPerStyle);
 
   // 5. try every combination of a shortlist of items per slot around each shown result, which finds improvements that

@@ -13,19 +13,32 @@ export const MELEE_TYPES = ['stab', 'slash', 'crush'];
 
 /** Weapons whose ranking is decided by a full armour search (rather than just the screening armour). */
 export const WEAPONS_TO_REFINE = 40;
-/** Weapons that also get tried with each owned armour set (void etc.) */
+/**
+ * How many of the best weapons (once refined) also get tried with each owned armour set (void etc.) This is after
+ * refining, as e.g. a weapon whose effect needs a specific amulet and spell does badly with the screening armour.
+ */
 export const WEAPONS_FOR_SET_SEEDS = 15;
 /**
- * How many of the best refined results get the (expensive) two-slot swap search. This is more than are shown, as the
+ * How many of the best refined weapons get the (expensive) two-slot swap search. This is more than are shown, as the
  * swaps can move a result up into the shown ones.
  */
-export const PAIR_SWAP_RESULTS = 15;
+export const PAIR_SWAP_RESULTS = 10;
+/**
+ * How many of each weapon's refined results (with different armour) get the two-slot swap search. The second best is
+ * often the one without a set seed, which a set's bonus beats until the rest of the armour is improved.
+ */
+export const RESULTS_PER_WEAPON = 2;
+/**
+ * In the two-slot swap search, each result is also descended from a setup with more strength bonus, valuing it at
+ * these fractions of the result's DPS (spread over its strength bonus), see descendPastMaxHit.
+ */
+export const STRENGTH_TRADE_FRACTIONS = [0.3];
 /**
  * In the two-slot swap search, how many of the best items in each slot are paired up with each other. With a minimum
  * weight, the heaviest items in each slot are paired up too, as single swaps get stuck more easily (e.g. a heavy item
  * can only be dropped if another slot gets heavier at the same time).
  */
-export const PAIR_CANDIDATES_PER_SLOT = 6;
+export const PAIR_CANDIDATES_PER_SLOT = 4;
 export const MAX_PAIR_ROUNDS = 6;
 export const MAX_DESCENT_PASSES = 8;
 /** How many swaps can be made to bring a setup up to the minimum weight before giving up on it. */
@@ -35,7 +48,7 @@ export const MAX_WEIGHT_REPAIR_STEPS = 20;
  * over the minimum weight), i.e. how much DPS it's worth giving up to reach the weight. Different values spread the
  * weight over the slots differently.
  */
-export const WEIGHT_TRADE_FRACTIONS = [0.02, 0.05, 0.1, 0.2, 0.4, 0.8];
+export const WEIGHT_TRADE_FRACTIONS = [0.05, 0.2, 0.8];
 export const WEIGHT_EPSILON = 1e-6;
 /** How many swaps can be made to bring a setup down to the risk limit before giving up on it. */
 export const MAX_RISK_REPAIR_STEPS = 20;
@@ -49,12 +62,12 @@ export const MIN_RISK_SCALE = 1_000_000;
  * improvements that need many slots to change at once. This is how many combinations may be tried for the best result
  * in each style; the other shown results get EXHAUSTIVE_OTHERS_FRACTION of it.
  */
-export const EXHAUSTIVE_BUDGET = 60_000;
+export const EXHAUSTIVE_BUDGET = 5_000;
 export const EXHAUSTIVE_OTHERS_FRACTION = 0.25;
 /** Each result's combinations are split into up to this many jobs (so that they can run in parallel)... */
 export const EXHAUSTIVE_CHUNKS_PER_RESULT = 32;
 /** ...but no smaller than this many combinations each, as each job has some overhead. */
-export const EXHAUSTIVE_MIN_CHUNK_SIZE = 5_000;
+export const EXHAUSTIVE_MIN_CHUNK_SIZE = 1_000;
 /**
  * With a minimum weight, shortlisted items are ranked as if each kg gained were worth this fraction of the result's DPS
  * (spread over the minimum weight), so that heavy items that make room for better items elsewhere are shortlisted too.
@@ -67,7 +80,7 @@ export const SHORTLIST_WEIGHT_FRACTION = 0.2;
 export const SHORTLIST_RISK_FRACTION = 0.2;
 /** The most equal-DPS alternatives shown per result. */
 export const MAX_ALTERNATIVES = 6;
-export const SPELLS_TO_CONSIDER = 6;
+export const SPELLS_TO_CONSIDER = 12;
 export const EPSILON = 1e-9;
 
 /** Spells that only work with specific weapons, so are always worth trying. */
