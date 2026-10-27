@@ -25,7 +25,7 @@ import {
 import { Monster } from '@/types/Monster';
 import { MonsterAttribute } from '@/enums/MonsterAttribute';
 import {
-  fetchPlayerSkills, fetchShortlinkData, getCombatStylesForCategory, isDefined, PotionMap,
+  fetchPlayerSkills, fetchShortlinkData, getCombatStylesForCategory, getDefaultCombatStyle, isDefined, PotionMap,
 } from '@/utils';
 import { ComputeBasicRequest, ComputeReverseRequest, WorkerRequestType } from '@/worker/CalcWorkerTypes';
 import { getMonsters, INITIAL_MONSTER_INPUTS } from '@/lib/Monsters';
@@ -83,7 +83,7 @@ const generateInitialEquipment = () => {
 
 export const generateEmptyPlayer = (name?: string): Player => ({
   name: name ?? 'Loadout 1',
-  style: getCombatStylesForCategory(EquipmentCategory.NONE)[0],
+  style: getDefaultCombatStyle(EquipmentCategory.NONE),
   skills: {
     atk: 99,
     def: 99,
@@ -94,6 +94,7 @@ export const generateEmptyPlayer = (name?: string): Player => ({
     str: 99,
     mining: 99,
     herblore: 99,
+    farming: 99,
   },
   boosts: {
     atk: 0,
@@ -105,6 +106,7 @@ export const generateEmptyPlayer = (name?: string): Player => ({
     str: 0,
     mining: 0,
     herblore: 0,
+    farming: 0,
   },
   equipment: generateInitialEquipment(),
   attackSpeed: DEFAULT_ATTACK_SPEED,
@@ -137,10 +139,14 @@ export const generateEmptyPlayer = (name?: string): Player => ({
     chargeSpell: false,
     markOfDarknessSpell: false,
     forinthrySurge: false,
-    soulreaperStacks: 0,
+    soulreaperStacks: 5,
     baAttackerLevel: 0,
     chinchompaDistance: 4, // 4 tiles is the optimal range for "medium fuse" (rapid), which is the default selected stance
     usingSunfireRunes: false,
+    fragmentOfWind: false,
+    fragmentOfWater: false,
+    fragmentOfEarth: false,
+    fragmentOfFire: false,
   },
   spell: null,
 });
@@ -151,7 +157,7 @@ export const generateEmptyPlayer = (name?: string): Player => ({
  */
 export const calculatePotionBoosts = (skills: PlayerSkills, potions: Potion[]): Partial<PlayerSkills> => {
   const boosts: Partial<PlayerSkills> = {
-    atk: 0, def: 0, magic: 0, prayer: 0, ranged: 0, str: 0, mining: 0, herblore: 0,
+    atk: 0, def: 0, magic: 0, prayer: 0, ranged: 0, str: 0, mining: 0, herblore: 0, farming: 0,
   };
 
   for (const p of potions) {
@@ -540,6 +546,8 @@ class GlobalState implements State {
 
   updateImportedData(data: ImportableData) {
     /* eslint-disable no-fallthrough */
+    /* eslint-disable @typescript-eslint/dot-notation */
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     switch (data.serializationVersion) {
       case 1:
         data.monster.inputs.phase = data.monster.inputs.tormentedDemonPhase;
@@ -549,13 +557,9 @@ class GlobalState implements State {
       case 4: // reserved: used during leagues 5
       case 5:
         data.loadouts.forEach((l) => {
-          /* eslint-disable @typescript-eslint/dot-notation */
-          /* eslint-disable @typescript-eslint/no-explicit-any */
           if ((l as any)['leagues']) {
             delete (l as any)['leagues'];
           }
-          /* eslint-enable @typescript-eslint/dot-notation */
-          /* eslint-enable @typescript-eslint/no-explicit-any */
         });
 
       case 6:
@@ -576,9 +580,15 @@ class GlobalState implements State {
 
       case 9: // reserved: used during leagues 6
 
+      case 10:
+        data.loadouts.forEach((l) => {
+          // leagues had prayers beyond 20, and now we need to reuse the ids
+          l.prayers = l.prayers?.filter((p) => p <= 20);
+        });
+
       default:
     }
-    /* eslint-enable no-fallthrough */
+    /* eslint-enable */
     console.debug('IMPORT | ', data);
 
     if (data.monster) {
@@ -944,16 +954,7 @@ class GlobalState implements State {
         const oldWeaponCat = currentWeapon?.category || EquipmentCategory.NONE;
         const newWeaponCat = newWeapon?.category || EquipmentCategory.NONE;
         if ((newWeaponCat !== undefined) && (newWeaponCat !== oldWeaponCat) && !player.style) {
-          // If the weapon slot category was changed, we should reset the player's selected combat style to the first one that exists.
-          const styles = getCombatStylesForCategory(newWeaponCat);
-          const rapid = styles.find((e) => e.stance === 'Rapid');
-          if (rapid !== undefined) {
-            player.style = rapid;
-          } else {
-            // Would perhaps be worth it to make a similar thing for looking up
-            // aggressive?
-            player.style = styles[0];
-          }
+          player.style = getDefaultCombatStyle(newWeaponCat);
         }
       }
     }
@@ -1089,7 +1090,7 @@ class GlobalState implements State {
 
     if (this.prefs.showTtkComparison && !INFINITE_HEALTH_MONSTERS.includes(this.monster.id)) {
       promises.push(
-        (async () => {
+        (async (): Promise<void> => {
           const parallel = process.env.NEXT_PUBLIC_SERIAL_TTK !== 'true';
           const resp = await this.calcWorker.do({
             type: parallel ? WorkerRequestType.COMPUTE_TTK_PARALLEL : WorkerRequestType.COMPUTE_TTK,

@@ -113,6 +113,7 @@ export const fetchPlayerSkills = async (username: string) => {
     magic: skillData[7].level,
     mining: skillData[15].level,
     herblore: skillData[16].level,
+    farming: skillData[20].level,
   };
 };
 
@@ -598,6 +599,11 @@ export const CombatStyleMap: { [k in EquipmentCategory]: { [k: string]: { image:
     Block: { image: '237' },
     Slash: { image: '238' },
   },
+  [EquipmentCategory.CHAIN_MACE]: {
+    'Thrust-Acc': { image: '266' },
+    'Thrust-Agg': { image: '267' },
+    Smash: { image: '256' },
+  },
 };
 
 /**
@@ -817,6 +823,17 @@ export const getCombatStylesForCategory = (style: EquipmentCategory): PlayerComb
         { name: 'Block', type: 'slash', stance: 'Defensive' },
       ];
       break;
+    case EquipmentCategory.CHAIN_MACE:
+      ret = [
+        {
+          name: 'Thrust-Acc', displayNameOverride: 'Thrust', type: 'crush', stance: 'Accurate',
+        },
+        {
+          name: 'Thrust-Agg', displayNameOverride: 'Thrust', type: 'crush', stance: 'Aggressive',
+        },
+        { name: 'Smash', type: 'crush', stance: 'Aggressive' },
+      ];
+      break;
     default:
       ret = [];
       break;
@@ -827,4 +844,18 @@ export const getCombatStylesForCategory = (style: EquipmentCategory): PlayerComb
     { name: 'Spell', type: 'magic', stance: 'Manual Cast' },
   );
   return ret;
+};
+
+/**
+ * Returns true if the user is on macOS.
+ */
+export const isMac = typeof window !== 'undefined' && /Mac OS X/i.test(navigator.userAgent);
+
+export const getDefaultCombatStyle = (category: EquipmentCategory): PlayerCombatStyle => {
+  const styles = getCombatStylesForCategory(category);
+
+  // Default to rapid or aggressive if available, or the first available style if not
+  return styles.find((s) => s.stance === 'Rapid')
+    ?? styles.find((s) => s.stance === 'Aggressive')
+    ?? styles[0];
 };

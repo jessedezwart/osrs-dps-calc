@@ -14,6 +14,7 @@ export interface PlayerSkills {
   str: number;
   mining: number;
   herblore: number;
+  farming: number;
 }
 
 export interface EquipmentPiece extends EquipmentStats {
@@ -142,6 +143,11 @@ export interface Player extends EquipmentStats {
      * @see https://oldschool.runescape.wiki/w/Sunfire_rune
      */
     usingSunfireRunes: boolean;
+
+    fragmentOfWind: boolean;
+    fragmentOfWater: boolean;
+    fragmentOfEarth: boolean;
+    fragmentOfFire: boolean;
   };
   spell: Spell | null;
 }

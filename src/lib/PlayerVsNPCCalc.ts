@@ -10,7 +10,7 @@ import {
   flatLimitTransformer,
   HitDistribution,
   Hitsplat,
-  HitTransformer,
+  HitTransformer, linearMaxTransformer,
   linearMinTransformer,
   multiplyTransformer,
   TransformOpts,
@@ -19,7 +19,6 @@ import {
 } from '@/lib/HitDist';
 import {
   canUseSunfireRunes,
-  getSpellMaxHit,
   isBindSpell,
 } from '@/types/Spell';
 import { PrayerData, PrayerMap } from '@/enums/Prayer';
@@ -50,6 +49,7 @@ import {
   ONE_HIT_MONSTERS,
   P2_WARDEN_IDS,
   SECONDS_PER_TICK,
+  TANGLEFOOT_IDS,
   TEKTON_IDS,
   TITAN_BOSS_IDS,
   TITAN_ELEMENTAL_IDS,
@@ -91,9 +91,11 @@ import {
   rubyBolts,
 } from '@/lib/dists/bolts';
 import { burningClawDoT, burningClawSpec, dClawDist } from '@/lib/dists/claws';
+import getSpellMaxHit from '@/types/SpellMax';
 
 const PARTIALLY_IMPLEMENTED_SPECS: string[] = [
   'Ancient godsword',
+  "Zorya's tome", // missing the follow-up attack buffs
 ];
 
 // https://oldschool.runescape.wiki/w/Category:Weapons_with_Special_attacks
@@ -102,7 +104,7 @@ const UNIMPLEMENTED_SPECS: string[] = [
   'Abyssal tentacle',
   'Ancient mace',
   'Armadyl crossbow',
-  'Blue moon spear',
+  'Blue Moon spear',
   'Bone dagger',
   'Brine sabre',
   'Darklight',
@@ -117,10 +119,10 @@ const UNIMPLEMENTED_SPECS: string[] = [
   'Excalibur',
   'Granite maul',
   'Rune claws',
-  'Staff of balance',
-  'Staff of light',
-  'Staff of the dead',
-  'Toxic staff of the dead',
+  'Staff of Balance',
+  'Staff of Light',
+  'Staff of the Dead',
+  'Toxic Staff of the Dead',
   'Ursine chainmace',
   'Zamorakian hasta',
   'Zamorakian spear',
@@ -345,6 +347,27 @@ export default class PlayerVsNPCCalc extends BaseCalc {
     const { buffs } = this.player;
 
     const baseLevel: number = this.trackAdd(DetailKey.DAMAGE_LEVEL, this.player.skills.str, this.player.boosts.str);
+    const gearBonus = this.trackAdd(DetailKey.DAMAGE_GEAR_BONUS, this.player.bonuses.str, 64);
+
+    if (TANGLEFOOT_IDS.includes(this.monster.id) && this.wearing(['Magic secateurs', 'Magic secateurs (nz)'])) {
+      // Farming level / 5 is added to strength bonus when using magic secateurs against tanglefooti
+      const farmingLevel = this.player.skills.farming + this.player.boosts.farming;
+      const farmingBonus = Math.trunc(farmingLevel / 5);
+      const farmingGearBonus = this.track(
+        DetailKey.DAMAGE_GEAR_BONUS_FARMING,
+        gearBonus + farmingBonus,
+        `${gearBonus} + (${farmingLevel} / 5) = ${gearBonus + farmingBonus}`,
+      );
+
+      // Prayers and stance bonus aren't included in calculating the max hit here
+      const baseMax = this.trackMaxHitFromEffective(DetailKey.MAX_HIT_BASE, baseLevel, farmingGearBonus);
+
+      // For some reason, 1 is subtracted at the end
+      const maxHit = this.track(DetailKey.MAX_HIT_TANGLEFOOT, Math.max(0, baseMax - 1), `max(0, ${baseMax} - 1) = ${Math.max(0, baseMax - 1)}`);
+
+      return [0, maxHit];
+    }
+
     let effectiveLevel: number = baseLevel;
 
     for (const p of this.getCombatPrayers()) {
@@ -376,7 +399,6 @@ export default class PlayerVsNPCCalc extends BaseCalc {
       effectiveLevel = this.trackFactor(DetailKey.DAMAGE_EFFECTIVE_LEVEL_VOID, effectiveLevel, [11, 10]);
     }
 
-    const gearBonus = this.trackAdd(DetailKey.DAMAGE_GEAR_BONUS, this.player.bonuses.str, 64);
     const baseMax = this.trackMaxHitFromEffective(DetailKey.MAX_HIT_BASE, effectiveLevel, gearBonus);
     let [minHit, maxHit]: MinMax = [0, baseMax];
 
@@ -474,6 +496,12 @@ export default class PlayerVsNPCCalc extends BaseCalc {
       } else {
         maxHit = this.trackAdd(DetailKey.MAX_HIT_FANG, maxHit, -shrink);
       }
+    }
+
+    if (this.wearing('Obligator') && this.monster.size >= 2 && this.player.style.name !== 'Smash') {
+      // todo placement? mostly relative to inq bonus / is it post-roll?
+      const bonus = this.monster.size === 2 ? 20 : 40;
+      maxHit = this.trackFactor(DetailKey.MAX_HIT_OBLIGATOR, maxHit, [100 + bonus, 100]);
     }
 
     if (this.opts.usingSpecialAttack) {
@@ -765,7 +793,8 @@ export default class PlayerVsNPCCalc extends BaseCalc {
     if (this.wearing('Tonalztics of Ralos')) {
       // rolls 75% of max hit, but can hit twice
       // double hit is implemented in hit distribution
-      maxHit = this.trackFactor(DetailKey.MAX_HIT_TONALZTICS, maxHit, [3, 4]);
+      const maxReduction = Math.trunc(maxHit * 1 / 4);
+      maxHit = this.trackAdd(DetailKey.MAX_HIT_TONALZTICS, maxHit, -maxReduction);
     }
 
     if (this.opts.usingSpecialAttack) {
@@ -891,6 +920,8 @@ export default class PlayerVsNPCCalc extends BaseCalc {
         attackRoll = this.trackFactor(DetailKey.PLAYER_ACCURACY_SPEC, attackRoll, [3, 2]);
       } else if (this.wearing('Eye of Ayak')) {
         attackRoll = this.trackFactor(DetailKey.PLAYER_ACCURACY_SPEC, attackRoll, [2, 1]);
+      } else if (this.wearing("Zorya's tome")) {
+        attackRoll = this.trackFactor(DetailKey.PLAYER_ACCURACY_SPEC, attackRoll, [250, 100]);
       }
     }
 
@@ -917,7 +948,7 @@ export default class PlayerVsNPCCalc extends BaseCalc {
     const { buffs } = this.player;
 
     if (spell) {
-      maxHit = getSpellMaxHit(spell, magicLevel);
+      maxHit = getSpellMaxHit(this.player);
       if (spell?.name === 'Magic Dart') {
         if (this.wearing("Slayer's staff (e)") && this.isSlayerMonster() && buffs.onSlayerTask) {
           maxHit = Math.trunc(13 + magicLevel / 6);
@@ -946,6 +977,8 @@ export default class PlayerVsNPCCalc extends BaseCalc {
       maxHit = Math.max(1, Math.trunc(magicLevel / 3) + 1);
     } else if (this.wearing('Eye of Ayak')) {
       maxHit = Math.max(1, Math.trunc(magicLevel / 3) - 6);
+    } else if (this.wearing("Zorya's tome")) {
+      maxHit = Math.max(1, Math.trunc(magicLevel / 3) - 10);
     } else if (this.wearing('Warped sceptre')) {
       maxHit = Math.max(1, Math.trunc((8 * magicLevel + 96) / 37));
     } else if (this.wearing('Bone staff')) {
@@ -1047,6 +1080,8 @@ export default class PlayerVsNPCCalc extends BaseCalc {
     if (this.opts.usingSpecialAttack) {
       if (this.isWearingAccursedSceptre()) {
         maxHit = this.trackFactor(DetailKey.MAX_HIT_SPEC, maxHit, [3, 2]);
+      } else if (this.wearing("Zorya's tome")) {
+        maxHit = this.trackFactor(DetailKey.MAX_HIT_SPEC, maxHit, [160, 100]);
       }
     }
 
@@ -1430,8 +1465,13 @@ export default class PlayerVsNPCCalc extends BaseCalc {
     }
 
     if (this.wearing('Sunspear') && this.opts.usingSpecialAttack) {
-      const effectDmg = this.trackFactor(DetailKey.MAX_HIT_SPEC, max, [7, 10]);
-      return new AttackDistribution([
+      // In-game testing shows that the spec hits are consistent with adding 1 after the 70% factor
+      const effectDmg = Math.trunc(max * 7 / 10) + 1;
+      this.track(DetailKey.MAX_HIT_SPEC, effectDmg, `(${max} * 7 / 10) + 1 = ${effectDmg}`);
+
+      // In-game testing also shows that vampyrebane bonuses are applied on top of this, so we don't
+      // want to return the dist early
+      dist = new AttackDistribution([
         HitDistribution.single(acc, [new Hitsplat(effectDmg)]),
       ]);
     }
@@ -1466,6 +1506,17 @@ export default class PlayerVsNPCCalc extends BaseCalc {
           const secondHitDist = firstHit.accurate ? loweredDefHitDist : standardHitDist;
           return firstHitDist.zip(secondHitDist);
         });
+      }
+    }
+
+    if (this.isUsingMeleeStyle() && this.wearing('Obligator') && this.player.style.name !== 'Smash') {
+      // todo can't wait to learn how this interacts with min hits next leagues
+      const rerolls = 2
+        + (this.monster.defensive.stab > this.monster.defensive.crush ? 1 : 0)
+        + (this.monster.defensive.slash > this.monster.defensive.crush ? 1 : 0);
+
+      for (let i = 1; i < rerolls; i++) {
+        dist = dist.transform(linearMaxTransformer(max), { transformInaccurate: false });
       }
     }
 
@@ -1801,6 +1852,7 @@ export default class PlayerVsNPCCalc extends BaseCalc {
       zcb: this.wearing('Zaryte crossbow'),
       spec: this.opts.usingSpecialAttack,
       kandarinDiary: this.player.buffs.kandarinDiary,
+      ascensions: this.wearing('Ascension crossbows'),
       monster: this.monster,
     };
     if (this.player.style.type === 'ranged' && this.player.equipment.weapon?.category === EquipmentCategory.CROSSBOW) {
@@ -1808,11 +1860,11 @@ export default class PlayerVsNPCCalc extends BaseCalc {
         dist = dist.transform(opalBolts(boltContext));
       } else if (this.wearing(['Pearl bolts (e)', 'Pearl dragon bolts (e)'])) {
         dist = dist.transform(pearlBolts(boltContext));
-      } else if (this.wearing(['Diamond bolts (e)', 'Diamond dragon bolts (e)'])) {
+      } else if (this.wearing(['Diamond bolts (e)', 'Diamond dragon bolts (e)', 'Diamond ascension bolts (e)'])) {
         dist = dist.transform(diamondBolts(boltContext));
       } else if (this.wearing(['Dragonstone bolts (e)', 'Dragonstone dragon bolts (e)'])) {
         dist = dist.transform(dragonstoneBolts(boltContext));
-      } else if (this.wearing(['Onyx bolts (e)', 'Onyx dragon bolts (e)']) && !mattrs.includes(MonsterAttribute.UNDEAD)) {
+      } else if (this.wearing(['Onyx bolts (e)', 'Onyx dragon bolts (e)', 'Onyx ascension bolts (e)']) && !mattrs.includes(MonsterAttribute.UNDEAD)) {
         dist = dist.transform(onyxBolts(boltContext));
       }
     }
@@ -1900,6 +1952,13 @@ export default class PlayerVsNPCCalc extends BaseCalc {
       if (YAMA_VOID_FLARE_IDS.includes(this.monster.id) && this.player.buffs.markOfDarknessSpell && this.player.spell?.name.includes('Demonbane')) {
         const demonbaneFactor = this.wearing('Purging staff') ? 50 : 25;
         return new AttackDistribution([HitDistribution.single(1.0, [new Hitsplat(max + Math.trunc(Math.trunc(max * demonbaneFactor / 100) * this.demonbaneVulnerability() / 100))])]);
+      }
+
+      if (this.wearing(['Sanguinesti staff', 'Holy sanguinesti staff'])) {
+        return new AttackDistribution([new HitDistribution([
+          new WeightedHit(0.8, [new Hitsplat(dist.getMax() - 8)]),
+          new WeightedHit(0.2, [new Hitsplat(dist.getMax())]),
+        ])]);
       }
 
       return new AttackDistribution([HitDistribution.single(1.0, [new Hitsplat(dist.getMax())])]);
@@ -2032,6 +2091,11 @@ export default class PlayerVsNPCCalc extends BaseCalc {
       relevantEffects.push([flatAddTransformer(-flatArmour), { transformInaccurate: false }]);
     }
 
+    const magicResistance = this.monster.defensive.magic_resistance;
+    if (magicResistance && styleType === 'magic') {
+      relevantEffects.push([flatAddTransformer(-magicResistance), { transformInaccurate: false }]);
+    }
+
     const transformer: HitTransformer = (hitsplat) => {
       let dist = HitDistribution.single(1.0, [hitsplat]);
       for (const t of relevantEffects) {
@@ -2097,8 +2161,11 @@ export default class PlayerVsNPCCalc extends BaseCalc {
         return true;
       }
     }
-    // Eclipse moon clone is immune to non-melee attacks
+    // Eclipse Moon clone is immune to non-melee attacks
     if (ECLIPSE_MOON_IDS.includes(this.monster.id) && this.monster.version === 'Clone' && !this.isUsingMeleeStyle()) {
+      return true;
+    }
+    if (TANGLEFOOT_IDS.includes(this.monster.id) && !(this.wearing(['Magic secateurs', 'Magic secateurs (nz)']) && this.isUsingMeleeStyle())) {
       return true;
     }
 
@@ -2525,7 +2592,7 @@ export default class PlayerVsNPCCalc extends BaseCalc {
       return false;
     }
     const [, max] = this.getMinAndMax();
-    return this.monster.inputs.monsterCurrentHp <= Math.trunc(max * 7 / 10);
+    return this.monster.inputs.monsterCurrentHp <= (Math.trunc(max * 7 / 10) + 1);
   }
 
   private getGlyphicAttenuationFactor(): Factor {
