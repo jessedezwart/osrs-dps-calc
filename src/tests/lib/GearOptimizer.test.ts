@@ -1,8 +1,9 @@
 import { describe, expect, test } from '@jest/globals';
 import {
-  equipmentWeight, GearOptimizer, optimizeGear, optimizeGearWith, OPTIMIZER_STYLES, OptimizerProgress, pruneDominated,
-  TrainingSkill,
+  equipmentWeight, GearOptimizer, getPrayers, optimizeGear, optimizeGearWith, OPTIMIZER_STYLES, OptimizerProgress,
+  pruneDominated, toggleSearchPrayer, TrainingSkill,
 } from '@/lib/GearOptimizer';
+import { Prayer } from '@/enums/Prayer';
 import { CombatStyleStance } from '@/types/PlayerCombatStyle';
 import { resolveOwnedEquipment } from '@/lib/BankImport';
 import { CAST_STANCES } from '@/lib/constants';
@@ -13,7 +14,7 @@ const owned = (ids: number[]): EquipmentPiece[] => resolveOwnedEquipment(ids.map
 
 const monster = getTestMonster('Abyssal demon');
 const player = getTestPlayer(monster);
-const opts = { prayerUnlocks: true };
+const opts = { prayers: [Prayer.PIETY, Prayer.RIGOUR, Prayer.AUGURY] };
 
 describe('pruneDominated', () => {
   test('removes items with strictly worse stats', () => {
@@ -24,6 +25,31 @@ describe('pruneDominated', () => {
   test('keeps items with special effects', () => {
     const items = [findEquipmentById(1163), findEquipmentById(11665)]; // Rune full helm, Void melee helm
     expect(pruneDominated(items, 'melee')).toHaveLength(2);
+  });
+});
+
+describe('search prayers', () => {
+  test('each style gets the prayers for it, and the ones for every style', () => {
+    const selected = [Prayer.EAGLE_EYE, Prayer.MYSTIC_MIGHT, Prayer.ULTIMATE_STRENGTH, Prayer.INCREDIBLE_REFLEXES, Prayer.STEEL_SKIN];
+    expect(getPrayers('melee', selected)).toEqual([Prayer.ULTIMATE_STRENGTH, Prayer.INCREDIBLE_REFLEXES, Prayer.STEEL_SKIN]);
+    expect(getPrayers('ranged', selected)).toEqual([Prayer.EAGLE_EYE, Prayer.STEEL_SKIN]);
+    expect(getPrayers('magic', selected)).toEqual([Prayer.MYSTIC_MIGHT, Prayer.STEEL_SKIN]);
+  });
+
+  test('a prayer for each style can be selected at the same time', () => {
+    let selected: Prayer[] = [];
+    for (const p of [Prayer.PIETY, Prayer.RIGOUR, Prayer.AUGURY]) selected = toggleSearchPrayer(selected, p);
+    expect(selected).toEqual([Prayer.PIETY, Prayer.RIGOUR, Prayer.AUGURY]);
+
+    // ...but conflicting prayers for the same style replace each other
+    expect(toggleSearchPrayer(selected, Prayer.CHIVALRY)).toEqual([Prayer.RIGOUR, Prayer.AUGURY, Prayer.CHIVALRY]);
+    // and a defensive prayer conflicts with all of them
+    expect(toggleSearchPrayer(selected, Prayer.STEEL_SKIN)).toEqual([Prayer.STEEL_SKIN]);
+    // brain and arm prayers can be combined
+    expect(toggleSearchPrayer([Prayer.ULTIMATE_STRENGTH], Prayer.INCREDIBLE_REFLEXES))
+      .toEqual([Prayer.ULTIMATE_STRENGTH, Prayer.INCREDIBLE_REFLEXES]);
+    // and toggling a selected prayer turns it off
+    expect(toggleSearchPrayer(selected, Prayer.RIGOUR)).toEqual([Prayer.PIETY, Prayer.AUGURY]);
   });
 });
 
@@ -149,11 +175,19 @@ describe('optimizeGear', () => {
   test('can omit prayers', () => {
     const bank = owned([4151, 9185, 9243, 1401]); // Abyssal whip, Rune crossbow, Diamond bolts (e), Mystic fire staff
     const withPrayers = optimizeGear(bank, player, monster, opts);
-    const withoutPrayers = optimizeGear(bank, player, monster, { ...opts, noPrayers: true });
+    const withoutPrayers = optimizeGear(bank, player, monster, { ...opts, prayers: [] });
     for (const style of ['melee', 'ranged', 'magic'] as const) {
       expect(withoutPrayers[style][0].prayers).toEqual([]);
       expect(withoutPrayers[style][0].dps).toBeLessThan(withPrayers[style][0].dps);
     }
+  });
+
+  test('uses only the selected prayers for each style', () => {
+    const bank = owned([4151, 9185, 9243, 1401]); // Abyssal whip, Rune crossbow, Diamond bolts (e), Mystic fire staff
+    const result = optimizeGear(bank, player, monster, opts);
+    expect(result.melee[0].prayers).toEqual([Prayer.PIETY]);
+    expect(result.ranged[0].prayers).toEqual([Prayer.RIGOUR]);
+    expect(result.magic[0].prayers).toEqual([Prayer.AUGURY]);
   });
 
   test('never casts excluded spells', () => {

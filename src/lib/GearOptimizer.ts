@@ -4,7 +4,7 @@ import {
 import { Monster } from '@/types/Monster';
 import { CombatStyleStance, PlayerCombatStyle } from '@/types/PlayerCombatStyle';
 import { Spell, spells } from '@/types/Spell';
-import { Prayer } from '@/enums/Prayer';
+import { Prayer, PrayerMap, prayersConflict } from '@/enums/Prayer';
 import { EquipmentCategory } from '@/enums/EquipmentCategory';
 import PlayerVsNPCCalc from '@/lib/PlayerVsNPCCalc';
 import NPCVsPlayerCalc from '@/lib/NPCVsPlayerCalc';
@@ -43,10 +43,11 @@ export const searchedStyles = (opts: Pick<OptimizerOpts, 'styles'>): OptimizerSt
   : OPTIMIZER_STYLES);
 
 export interface OptimizerOpts {
-  /** Whether Rigour and Augury are unlocked. If not, Eagle Eye and Mystic Might are used instead. */
-  prayerUnlocks: boolean;
-  /** Don't use any offensive prayers. */
-  noPrayers?: boolean;
+  /**
+   * The prayers that may be used. Each style uses the ones for that style (e.g. Piety for melee), and the ones that
+   * aren't for a specific style (e.g. Steel Skin). Defaults to none.
+   */
+  prayers?: Prayer[];
   /** How many results (each with a different weapon) to return per style. */
   resultsPerStyle?: number;
   /**
@@ -318,16 +319,29 @@ const SET_SEEDS: { styles: OptimizerStyle[], pieces: Partial<Record<keyof Player
   },
 ];
 
-const getPrayers = (style: OptimizerStyle, prayerUnlocks: boolean): Prayer[] => {
-  switch (style) {
-    case 'melee':
-      return [Prayer.PIETY];
-    case 'ranged':
-      return [prayerUnlocks ? Prayer.RIGOUR : Prayer.EAGLE_EYE];
-    case 'magic':
-    default:
-      return [prayerUnlocks ? Prayer.AUGURY : Prayer.MYSTIC_MIGHT];
-  }
+/**
+ * The prayers that a style uses out of the selected ones: those for that style, and those that aren't for a specific
+ * style.
+ */
+export const getPrayers = (style: OptimizerStyle, selected: Prayer[]): Prayer[] => selected
+  .filter((p) => !PrayerMap[p].combatStyle || PrayerMap[p].combatStyle === style);
+
+/**
+ * Toggles a prayer in the selection for the search. Turning one on only turns off the prayers that conflict with it in
+ * a style that would use both, so e.g. Piety, Rigour and Augury can all be selected (one for each style), but Steel
+ * Skin replaces all three.
+ */
+export const toggleSearchPrayer = (selected: Prayer[], prayer: Prayer): Prayer[] => {
+  if (selected.includes(prayer)) return selected.filter((p) => p !== prayer);
+  const style = PrayerMap[prayer].combatStyle;
+  return [
+    ...selected.filter((p) => {
+      const otherStyle = PrayerMap[p].combatStyle;
+      const sharesStyle = !style || !otherStyle || style === otherStyle;
+      return !(sharesStyle && prayersConflict(p, prayer));
+    }),
+    prayer,
+  ];
 };
 
 export const equipmentWeight = (equipment: PlayerEquipment): number => SLOTS
@@ -722,7 +736,7 @@ export class GearOptimizer {
     }
 
     this.state = {
-      prayers: this.opts.noPrayers ? [] : getPrayers(family, this.opts.prayerUnlocks),
+      prayers: getPrayers(family, this.opts.prayers || []),
       slotCandidates,
       // if the weapon doesn't use ammo, its ranged stats and bolt effects don't apply, so most of it can go
       unusedAmmoCandidates: pruneDominated(

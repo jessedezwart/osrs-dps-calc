@@ -8,6 +8,8 @@ import Modal from '@/app/components/generic/Modal';
 import LazyImage from '@/app/components/generic/LazyImage';
 import Select, { OnIsOpenChangeParams } from '@/app/components/generic/Select';
 import { findRuneLiteInstances, WikiSyncer } from '@/wikisync/WikiSyncer';
+import { PartialDeep } from 'type-fest';
+import { Player } from '@/types/Player';
 
 type WikiSyncSelectItem = {
   label: string;
@@ -44,7 +46,14 @@ const WikiSyncButton: React.FC<IWikiSyncButtonProps> = observer((props) => {
   );
 });
 
-const WikiSyncButtonWrapper: React.FC = observer(() => {
+interface IWikiSyncButtonWrapperProps {
+  /** Must be unique on the page. Defaults to wikisync-wss. */
+  id?: string;
+  /** What to do with each imported player. Defaults to updating the current loadout with it. */
+  onImport?: (player: PartialDeep<Player>) => void;
+}
+
+const WikiSyncButtonWrapper: React.FC<IWikiSyncButtonWrapperProps> = observer(({ id, onImport }) => {
   const { updatePlayer } = useStore();
   const [helpIsOpen, setHelpIsOpen] = useState(false);
   const [helpLocalNetworkPermission, setHelpLocalNetworkPermission] = useState<PermissionState | null>(null);
@@ -55,11 +64,11 @@ const WikiSyncButtonWrapper: React.FC = observer(() => {
       const data = await item.syncer?.getPlayer();
       if (data) {
         parseLoadoutsFromImportedData(data).forEach((player) => {
-          updatePlayer(player);
+          (onImport ?? updatePlayer)(player);
         });
       }
     }
-  }, [updatePlayer]);
+  }, [onImport, updatePlayer]);
 
   const onIsOpenChange = useCallback(async ({ isOpen, closeMenu }: OnIsOpenChangeParams) => {
     if (!isOpen) {
@@ -88,7 +97,7 @@ const WikiSyncButtonWrapper: React.FC = observer(() => {
   return (
     <>
       <Select
-        id="wikisync-wss"
+        id={id ?? 'wikisync-wss'}
         items={validWikiSyncInstances}
         CustomSelectComponent={WikiSyncButton}
         onSelectedItemChange={onSelect}

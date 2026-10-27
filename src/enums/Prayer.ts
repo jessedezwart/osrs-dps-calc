@@ -281,3 +281,18 @@ export const PrayerMap: { [k in Prayer]: PrayerData } = {
 
 export const SortedPrayers = Object.entries(PrayerMap)
   .sort(([, a], [, b]) => a.renderOrder - b.renderOrder); // Sort by renderOrder
+
+/**
+ * Whether two prayers can't be active at the same time.
+ */
+export const prayersConflict = (a: Prayer, b: Prayer): boolean => {
+  if (a === b) return false;
+  // Only one defensive prayer, and one overhead prayer
+  if (DEFENSIVE_PRAYERS.includes(a) && DEFENSIVE_PRAYERS.includes(b)) return true;
+  if (OVERHEAD_PRAYERS.includes(a) && OVERHEAD_PRAYERS.includes(b)) return true;
+  // Offensive prayers can't be combined, except a "brain" prayer with an "arm" prayer
+  if (OFFENSIVE_PRAYERS.includes(a) && OFFENSIVE_PRAYERS.includes(b)) {
+    return !((BRAIN_PRAYERS.includes(a) && ARM_PRAYERS.includes(b)) || (ARM_PRAYERS.includes(a) && BRAIN_PRAYERS.includes(b)));
+  }
+  return false;
+};

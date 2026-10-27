@@ -26,7 +26,7 @@ const BankImportButton: React.FC = observer(() => {
       const items = parseBankCsv(await file.text());
       const equippable = resolveOwnedEquipment(items);
       store.setBank(items, file.name);
-      toast.success(`Imported ${items.length} bank items (${equippable.length} usable equipment). Use "Find Best Gear" below to search them.`, { toastId: 'bank-import' });
+      toast.success(`Imported ${items.length} bank items (${equippable.length} usable equipment). Click "Find best gear" to search them.`, { toastId: 'bank-import' });
     } catch (err) {
       console.error(err);
       toast.error(`Could not import bank: ${err instanceof Error ? err.message : err}`, { toastId: 'bank-import' });

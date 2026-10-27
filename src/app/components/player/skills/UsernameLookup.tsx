@@ -3,7 +3,12 @@ import { observer } from 'mobx-react-lite';
 import { useStore } from '@/state';
 import localforage from 'localforage';
 
-const UsernameLookup: React.FC = observer(() => {
+interface IUsernameLookupProps {
+  /** Whether the levels are filled in for the current loadout (the default), or the gear optimizer. */
+  target?: 'loadout' | 'optimizer';
+}
+
+const UsernameLookup: React.FC<IUsernameLookupProps> = observer(({ target }) => {
   const store = useStore();
   const username = store.ui.username || '';
   const shouldRemember = store.prefs.rememberUsername;
@@ -37,7 +42,7 @@ const UsernameLookup: React.FC = observer(() => {
         className="ml-1 text-sm btn"
         onClick={async () => {
           setBtnDisabled(true);
-          await store.fetchCurrentPlayerSkills();
+          await store.fetchCurrentPlayerSkills(target);
           setBtnDisabled(false);
         }}
       >

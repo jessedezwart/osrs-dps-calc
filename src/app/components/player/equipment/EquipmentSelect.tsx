@@ -77,13 +77,19 @@ const gauntletSort = (items: EquipmentOption[], monsterId: number) => {
 };
 
 interface IEquipmentSelectProps {
+  /** Must be unique on the page. Defaults to equipment-select. */
+  id?: string;
+  /** Defaults to "Search for equipment...". */
+  placeholder?: string;
   customAvailableEquipmentFilter?: (eq: EquipmentPiece) => boolean;
   onSelectedItemChange?: (item: EquipmentOption | null | undefined) => void;
   canonicalize?: boolean;
 }
 
 const EquipmentSelect: React.FC<IEquipmentSelectProps> = observer((props) => {
-  const { customAvailableEquipmentFilter, onSelectedItemChange, canonicalize } = props;
+  const {
+    id, placeholder, customAvailableEquipmentFilter, onSelectedItemChange, canonicalize,
+  } = props;
   const store = useStore();
 
   const options: EquipmentOption[] = useMemo(() => {
@@ -134,12 +140,12 @@ const EquipmentSelect: React.FC<IEquipmentSelectProps> = observer((props) => {
 
   return (
     <Combobox<EquipmentOption>
-      id="equipment-select"
+      id={id ?? 'equipment-select'}
       className="w-full"
       items={options}
       keepOpenAfterSelect
       keepPositionAfterSelect
-      placeholder="Search for equipment..."
+      placeholder={placeholder ?? 'Search for equipment...'}
       onSelectedItemChange={(item) => {
         if (onSelectedItemChange) {
           onSelectedItemChange(item);

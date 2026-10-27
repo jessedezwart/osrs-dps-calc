@@ -2,19 +2,26 @@ import { PlayerSkills } from '@/types/Player';
 import Image, { StaticImageData } from 'next/image';
 import React, { useId } from 'react';
 import { observer } from 'mobx-react-lite';
-import { useStore } from '@/state';
 import NumberInput from '@/app/components/generic/NumberInput';
+
+export interface SkillChange {
+  skills?: Partial<PlayerSkills>;
+  boosts?: Partial<PlayerSkills>;
+}
 
 interface SkillInputProps {
   name: string;
   field: keyof PlayerSkills;
   image: string | StaticImageData;
+  skills: PlayerSkills;
+  boosts: PlayerSkills;
+  onChange: (change: SkillChange) => void;
 }
 
 const SkillInput: React.FC<SkillInputProps> = observer((props) => {
-  const store = useStore();
-  const { player } = store;
-  const { name, field, image } = props;
+  const {
+    name, field, image, skills, boosts, onChange,
+  } = props;
   const id = useId();
 
   return (
@@ -33,11 +40,11 @@ const SkillInput: React.FC<SkillInputProps> = observer((props) => {
                 min={1}
                 max={255}
                 title={`Your current ${name} level`}
-                value={player.skills[field] + player.boosts[field]}
+                value={skills[field] + boosts[field]}
                 onChange={(v) => {
-                  store.updatePlayer({
+                  onChange({
                     boosts: {
-                      [field]: v - player.skills[field],
+                      [field]: v - skills[field],
                     },
                   });
                 }}
@@ -46,7 +53,7 @@ const SkillInput: React.FC<SkillInputProps> = observer((props) => {
             </div>
           ) : (
             <span title={`Your current ${name} level`}>
-              {player.skills[field] + player.boosts[field]}
+              {skills[field] + boosts[field]}
               /
             </span>
           )}
@@ -59,9 +66,9 @@ const SkillInput: React.FC<SkillInputProps> = observer((props) => {
             min={1}
             max={255}
             title={`Your base ${name} level`}
-            value={player.skills[field]}
+            value={skills[field]}
             onChange={(v) => {
-              store.updatePlayer({
+              onChange({
                 skills: {
                   [field]: v,
                 },

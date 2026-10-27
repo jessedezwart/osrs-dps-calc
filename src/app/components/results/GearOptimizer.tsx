@@ -30,9 +30,23 @@ import {
   LoadoutAlternative, OPTIMIZER_STYLES, OptimizedLoadout, OptimizerJob, OptimizerProgress, OptimizerResult, OptimizerStyle,
   StyleSearchSummary, TrainingSkill, searchedStyles,
 } from '@/lib/GearOptimizer';
-import { EquipmentPiece, PlayerEquipment } from '@/types/Player';
+import {
+  EquipmentPiece, Player, PlayerEquipment, PlayerSkills,
+} from '@/types/Player';
 import { getCdnImage, getWikiImage, isDefined } from '@/utils';
 import { spells } from '@/types/Spell';
+import { PrayerMap } from '@/enums/Prayer';
+import PlayerTab from '@/app/components/player/PlayerTab';
+import { SkillsAndBoosts } from '@/app/components/player/Skills';
+import { PrayerGrid } from '@/app/components/player/Prayers';
+import { ExtraOptionsList } from '@/app/components/player/ExtraOptions';
+import EquipmentSelect from '@/app/components/player/equipment/EquipmentSelect';
+import WikiSyncButton from '@/app/components/player/WikiSyncButton';
+import BankImportButton, { BankExportDirCopy } from '@/app/components/player/BankImportButton';
+import skillsTab from '@/public/img/tabs/skills.png';
+import equipmentTab from '@/public/img/tabs/equipment.png';
+import optionsTab from '@/public/img/tabs/options.webp';
+import prayerTab from '@/public/img/tabs/prayer.png';
 
 const DISPLAY_SLOTS: (keyof PlayerEquipment)[] = [
   'head', 'cape', 'neck', 'ammo', 'weapon', 'body', 'shield', 'legs', 'hands', 'feet', 'ring',
@@ -125,7 +139,39 @@ const alternativeTooltip = (loadout: OptimizedLoadout, alt: LoadoutAlternative) 
   return parts.join(' ');
 };
 
-const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateLoadout: boolean }> = observer(({ loadout, rank, canCreateLoadout }) => {
+/**
+ * The difference with the result below, coloured by whether it's better (green) or worse (red). Hidden if it rounds to
+ * zero.
+ */
+const Delta: React.FC<{ value: number, precision: number, lowerIsBetter?: boolean, tooltip: string }> = ({
+  value, precision, lowerIsBetter, tooltip,
+}) => {
+  if (Math.abs(value) < 0.5 * 10 ** -precision) return null;
+  const better = lowerIsBetter ? value < 0 : value > 0;
+  return (
+    <span
+      className={`ml-1 text-xs font-normal ${better ? 'text-green-800 dark:text-green-200' : 'text-red-400 dark:text-red-200'}`}
+      data-tooltip-id="tooltip"
+      data-tooltip-content={tooltip}
+    >
+      {`${value > 0 ? '+' : '−'}${Math.abs(value).toFixed(precision)}`}
+    </span>
+  );
+};
+
+/** The levels, boosts and extra options a search was run with, which applying a result copies into the loadout. */
+type SearchBase = Pick<Player, 'skills' | 'boosts' | 'buffs'>;
+
+const LoadoutRow: React.FC<{
+  loadout: OptimizedLoadout,
+  /** The result below this one, to compare with. */
+  next?: OptimizedLoadout,
+  base: SearchBase,
+  rank: number,
+  canCreateLoadout: boolean,
+}> = observer(({
+  loadout, next, base, rank, canCreateLoadout,
+}) => {
   const store = useStore();
 
   return (
@@ -225,7 +271,7 @@ const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateL
                 className="flex items-center gap-1 pl-0.5 pr-1 rounded bg-body-100 dark:bg-dark-400 hover:ring-2 hover:ring-orange-400"
                 data-tooltip-id="tooltip"
                 data-tooltip-content={alternativeTooltip(loadout, alt)}
-                onClick={() => store.applyOptimizedLoadout({ ...loadout, equipment: { ...loadout.equipment, [alt.slot]: alt.item } }, false)}
+                onClick={() => store.applyOptimizedLoadout({ ...loadout, equipment: { ...loadout.equipment, [alt.slot]: alt.item } }, false, base)}
               >
                 <span className="w-4 h-4 flex items-center justify-center">
                   {alt.item.image && <LazyImage responsive src={getCdnImage(`equipment/${alt.item.image}`)} alt="" />}
@@ -237,13 +283,26 @@ const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateL
           </div>
         )}
       </td>
-      <td className="px-2 py-1 text-right font-bold">{loadout.dps.toFixed(3)}</td>
+      <td className="px-2 py-1 text-right font-bold whitespace-nowrap">
+        {loadout.dps.toFixed(3)}
+        {next && <Delta value={loadout.dps - next.dps} precision={3} tooltip={`DPS compared with #${rank + 1}`} />}
+      </td>
       <td className="px-2 py-1 text-right">{loadout.maxHit}</td>
       <td className="px-2 py-1 text-right">{`${(loadout.accuracy * 100).toFixed(2)}%`}</td>
       <td className="px-2 py-1 text-right whitespace-nowrap">
         {loadout.npcDps > 0 ? (
           <>
-            <div>{loadout.avgDmgTaken !== undefined ? loadout.avgDmgTaken.toFixed(1) : '-----'}</div>
+            <div>
+              {loadout.avgDmgTaken !== undefined ? loadout.avgDmgTaken.toFixed(1) : '-----'}
+              {loadout.avgDmgTaken !== undefined && next?.avgDmgTaken !== undefined && (
+                <Delta
+                  value={loadout.avgDmgTaken - next.avgDmgTaken}
+                  precision={1}
+                  lowerIsBetter
+                  tooltip={`Damage taken per kill compared with #${rank + 1}`}
+                />
+              )}
+            </div>
             <div className="text-xs text-gray-500 dark:text-gray-300">{`${loadout.npcDps.toFixed(3)}/s`}</div>
           </>
         ) : '-----'}
@@ -254,7 +313,9 @@ const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateL
           <button
             type="button"
             className="form-control text-xs whitespace-nowrap"
-            onClick={() => store.applyOptimizedLoadout(loadout, false)}
+            onClick={() => store.applyOptimizedLoadout(loadout, false, base)}
+            data-tooltip-id="tooltip"
+            data-tooltip-content="Replace the current loadout with this gear, and the levels, potions, prayers and extra options the search used"
           >
             Apply
           </button>
@@ -262,11 +323,11 @@ const LoadoutRow: React.FC<{ loadout: OptimizedLoadout, rank: number, canCreateL
             type="button"
             className="form-control text-xs whitespace-nowrap"
             disabled={!canCreateLoadout}
-            onClick={() => store.applyOptimizedLoadout(loadout, true)}
+            onClick={() => store.applyOptimizedLoadout(loadout, true, base)}
             data-tooltip-id="tooltip"
-            data-tooltip-content={canCreateLoadout ? 'Apply as a new loadout' : 'You have the maximum number of loadouts'}
+            data-tooltip-content={canCreateLoadout ? 'Add this setup to your loadouts at the top, to compare it with them' : 'You have the maximum number of loadouts'}
           >
-            New loadout
+            Add to loadouts
           </button>
         </div>
       </td>
@@ -662,36 +723,30 @@ const SearchSummary: React.FC<{ result: OptimizerResult, elapsed: number }> = ({
   );
 };
 
-interface ISlotLocksProps {
-  equipment: PlayerEquipment;
-  lockedSlots: (keyof PlayerEquipment)[];
-  setLockedSlots: (slots: (keyof PlayerEquipment)[]) => void;
-}
-
 /**
- * Lets the user pick slots of the current loadout to keep fixed while the rest of the gear is searched.
+ * Lets the user lock slots to an item (or to being empty) while the rest of the gear is searched.
  */
-const SlotLocks: React.FC<ISlotLocksProps> = observer(({ equipment, lockedSlots, setLockedSlots }) => {
-  const toggle = (slot: keyof PlayerEquipment) => setLockedSlots(
-    lockedSlots.includes(slot) ? lockedSlots.filter((s) => s !== slot) : [...lockedSlots, slot],
-  );
+const SlotLocks: React.FC = observer(() => {
+  const store = useStore();
+  const { locked } = store.optimizerSettings;
 
   return (
-    <div className="my-3">
-      <div className="font-bold mb-1">Locked slots</div>
-      <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
-        Click a slot to keep the current loadout&apos;s item in it (or keep it empty). The search only changes the unlocked slots.
+    <div className="px-4 py-4">
+      <p className="text-xs text-gray-500 dark:text-gray-300 mb-2">
+        Search for an item to lock its slot to it. It doesn&apos;t need to be owned. Click an unlocked slot to keep it
+        empty, or a locked slot to unlock it. The search only changes the unlocked slots.
       </p>
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1 mb-2">
         {DISPLAY_SLOTS.map((slot) => {
-          const item = equipment[slot];
-          const isLocked = lockedSlots.includes(slot);
-          const label = `${slot}: ${item ? item.name : '(empty)'}${isLocked ? ' — locked' : ''}`;
+          const isLocked = Object.hasOwn(locked, slot);
+          const item = locked[slot];
+          // eslint-disable-next-line no-nested-ternary
+          const label = `${slot}: ${!isLocked ? 'searched' : item ? `${item.name} (locked)` : 'empty (locked)'}`;
           return (
             <button
               key={slot}
               type="button"
-              onClick={() => toggle(slot)}
+              onClick={() => store.setOptimizerLock(slot, isLocked ? undefined : null)}
               className={`relative w-9 h-9 p-1 rounded border-2 flex items-center justify-center transition-colors ${isLocked
                 ? 'border-orange-400 bg-orange-200 dark:bg-orange-900'
                 : 'border-transparent bg-body-100 dark:bg-dark-400 hover:border-body-300 dark:hover:border-dark-200'}`}
@@ -710,6 +765,67 @@ const SlotLocks: React.FC<ISlotLocksProps> = observer(({ equipment, lockedSlots,
           );
         })}
       </div>
+      <EquipmentSelect
+        id="gear-optimizer-lock-select"
+        placeholder="Lock a slot to an item..."
+        onSelectedItemChange={(option) => {
+          if (option) store.setOptimizerLock(option.equipment.slot as keyof PlayerEquipment, option.equipment);
+        }}
+      />
+    </div>
+  );
+});
+
+type SettingsTab = 'skills' | 'prayer' | 'equipment' | 'options';
+
+/**
+ * The levels, potions, prayers, locked items and extra options the search uses. These are separate from the loadouts.
+ */
+const PlayerSettings: React.FC = observer(() => {
+  const store = useStore();
+  const settings = store.optimizerSettings;
+  const [tab, setTab] = useState<SettingsTab>('skills');
+
+  return (
+    <div className="w-full max-w-[350px] shrink-0 flex flex-col rounded-lg overflow-hidden border border-body-300 dark:border-dark-200 bg-tile dark:bg-dark-300">
+      <div className="flex justify-center items-center bg-body-100 dark:bg-dark-400 border-b border-body-400 dark:border-dark-200 px-4 py-3 gap-1">
+        <PlayerTab name="Skills" isActive={tab === 'skills'} image={skillsTab} onClick={() => setTab('skills')} />
+        <PlayerTab name="Prayer" isActive={tab === 'prayer'} image={prayerTab} onClick={() => setTab('prayer')} />
+        <PlayerTab name="Locked equipment" isActive={tab === 'equipment'} image={equipmentTab} onClick={() => setTab('equipment')} />
+        <PlayerTab name="Extra options" isActive={tab === 'options'} image={optionsTab} onClick={() => setTab('options')} />
+      </div>
+      {tab === 'skills' && (
+        <SkillsAndBoosts
+          skills={settings.skills}
+          boosts={settings.boosts}
+          potions={settings.buffs.potions}
+          onChange={(change) => store.updateOptimizerSettings(change)}
+          togglePotion={store.toggleOptimizerPotion}
+          lookupTarget="optimizer"
+          lookupExtra={(
+            <WikiSyncButton
+              id="gear-optimizer-wikisync"
+              onImport={(p) => store.updateOptimizerSettings({
+                skills: p.skills as Partial<PlayerSkills>,
+                buffs: p.buffs as Partial<Player['buffs']>,
+              })}
+            />
+          )}
+        />
+      )}
+      {tab === 'prayer' && (
+        <div className="px-4 mb-6">
+          <PrayerGrid prayers={settings.prayers} onToggle={store.toggleOptimizerPrayer} />
+          <p className="text-xs text-gray-500 dark:text-gray-300 mt-4">
+            Each style uses the selected prayers for it (e.g. Piety for melee), plus the ones for every style (e.g. Steel
+            Skin). You can select one for each style at the same time.
+          </p>
+        </div>
+      )}
+      {tab === 'equipment' && <SlotLocks />}
+      {tab === 'options' && (
+        <ExtraOptionsList buffs={settings.buffs} onChange={(buffs) => store.updateOptimizerSettings({ buffs })} />
+      )}
     </div>
   );
 });
@@ -717,17 +833,13 @@ const SlotLocks: React.FC<ISlotLocksProps> = observer(({ equipment, lockedSlots,
 const GearOptimizer: React.FC = observer(() => {
   const calc = useCalc();
   const store = useStore();
-  const { bank, player, monster } = store;
+  const { bank, monster } = store;
+  const settings = store.optimizerSettings;
+  const {
+    styles, training, spell, minWeight, locked, prayers,
+  } = settings;
 
   const [isOpen, setIsOpen] = useState(true);
-  const [includeEquipped, setIncludeEquipped] = useState(true);
-  const [prayerUnlocks, setPrayerUnlocks] = useState(true);
-  const [usePrayers, setUsePrayers] = useState(false);
-  const [lockedSlots, setLockedSlots] = useState<(keyof PlayerEquipment)[]>([]);
-  const [training, setTraining] = useState<TrainingSkill | undefined>(undefined);
-  const [styles, setStyles] = useState<OptimizerStyle[]>(OPTIMIZER_STYLES);
-  const [spell, setSpell] = useState<string | undefined>(undefined);
-  const [minWeight, setMinWeight] = useState(0);
   const [running, setRunning] = useState<{ start: number }>();
   const [progress, setProgress] = useState<OptimizerProgress>();
   const [now, setNow] = useState(0);
@@ -739,17 +851,24 @@ const GearOptimizer: React.FC = observer(() => {
     return () => clearInterval(interval);
   }, [running]);
   const [result, setResult] = useState<{
-    data: OptimizerResult, inputsKey: string, elapsed: number, hadFilters: boolean, styles: OptimizerStyle[], spell?: string,
+    data: OptimizerResult,
+    inputsKey: string,
+    elapsed: number,
+    hadFilters: boolean,
+    styles: OptimizerStyle[],
+    spell?: string,
+    base: SearchBase,
   }>();
 
   const equippedIds = JSON.stringify(store.loadouts.flatMap((l) => Object.values(l.equipment)
     .filter(isDefined)
     .flatMap((e) => [e.id, e.itemVars?.blowpipeDartId].filter(isDefined))));
 
+  // bank exports don't include worn items, so everything equipped in the loadouts is also considered
   const ownedAll = useMemo(() => {
     if (!bank) return [];
-    return resolveOwnedEquipment(bank.items, includeEquipped ? JSON.parse(equippedIds) : []);
-  }, [bank, includeEquipped, equippedIds]);
+    return resolveOwnedEquipment(bank.items, JSON.parse(equippedIds));
+  }, [bank, equippedIds]);
 
   const { excludedItemIds } = store;
   const owned = useMemo(
@@ -757,24 +876,19 @@ const GearOptimizer: React.FC = observer(() => {
     [ownedAll, excludedItemIds],
   );
 
-  // the locked slots take whatever is in the current loadout
-  const locked: Partial<PlayerEquipment> = {};
-  for (const slot of lockedSlots) {
-    locked[slot] = toJS(player.equipment[slot]);
-  }
-
   const searchStyles = searchedStyles({ styles });
   const castSpell = searchStyles.includes('magic') ? spell : undefined;
 
   // used to tell whether the results are out of date
   const inputsKey = JSON.stringify([
-    toJS(monster), toJS(player.skills), toJS(player.boosts), toJS(player.buffs), owned.map((o) => o.id), prayerUnlocks, usePrayers, locked, training ?? null,
-    castSpell ? null : toJS(store.excludedSpells), minWeight, searchStyles, castSpell ?? null, toJS(store.ignoredAmmo),
+    toJS(monster), toJS(settings.skills), toJS(settings.boosts), toJS(settings.buffs), owned.map((o) => o.id), toJS(prayers),
+    toJS(locked), training ?? null, castSpell ? null : toJS(store.excludedSpells), minWeight, searchStyles, castSpell ?? null,
+    toJS(store.ignoredAmmo),
   ]);
 
-  const toggleStyle = (style: OptimizerStyle) => setStyles(styles.includes(style)
-    ? styles.filter((s) => s !== style)
-    : [...styles, style]);
+  const toggleStyle = (style: OptimizerStyle) => store.updateOptimizerSettings({
+    styles: styles.includes(style) ? styles.filter((s) => s !== style) : [...styles, style],
+  });
 
   const run = async () => {
     if (!calc.isReady() || owned.length === 0 || searchStyles.length === 0) return;
@@ -783,16 +897,16 @@ const GearOptimizer: React.FC = observer(() => {
     setRunning({ start });
     setNow(start);
     setProgress(undefined);
+    const player = store.optimizerBasePlayer;
     const req: OptimizeGearRequest = {
       type: WorkerRequestType.OPTIMIZE_GEAR,
       data: {
         owned,
-        player: toJS(player),
+        player,
         monster: toJS(monster),
         opts: {
-          prayerUnlocks,
-          noPrayers: !usePrayers,
-          locked,
+          prayers: toJS(prayers),
+          locked: toJS(locked),
           training,
           excludedSpells: toJS(store.excludedSpells),
           ignoredAmmo: toJS(store.ignoredAmmo),
@@ -809,9 +923,10 @@ const GearOptimizer: React.FC = observer(() => {
         data: resp.payload,
         inputsKey,
         elapsed: performance.now() - start,
-        hadFilters: lockedSlots.length > 0 || !!training || minWeight > 0,
+        hadFilters: Object.keys(locked).length > 0 || !!training || minWeight > 0,
         styles: searchStyles,
         spell: castSpell,
+        base: { skills: player.skills, boosts: player.boosts, buffs: player.buffs },
       });
     } catch (e) {
       console.error('[GearOptimizer] Failed to optimize gear', e);
@@ -837,22 +952,27 @@ const GearOptimizer: React.FC = observer(() => {
       )}
     >
       <div className="px-6 py-4 text-sm text-black dark:text-white">
-        {!bank ? (
-          <p>
-            Import your bank to find the best gear you own against the selected monster. Click the upload icon next to the
-            loadout name and choose a bank export CSV (with the columns ID, Name, Quantity), such as the one exported by the
-            RuneLite Bank Memory or Dude Where&apos;s My Stuff plugins.
-          </p>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <div>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <div>
+            {bank ? (
+              <>
                 <span className="font-bold">{bank.fileName}</span>
                 {' '}
                 <span className="text-gray-500 dark:text-gray-300">
                   {`${bank.items.length} items, ${ownedAll.length} usable equipment${ownedAll.length !== owned.length ? ` (${ownedAll.length - owned.length} excluded)` : ''}`}
                 </span>
-              </div>
+              </>
+            ) : (
+              <span className="text-gray-500 dark:text-gray-300">
+                Import your bank to find the best gear you own against the selected monster. Use the upload button to choose
+                a bank export CSV (with the columns ID, Name, Quantity), such as the one exported by the RuneLite Bank
+                Memory or Dude Where&apos;s My Stuff plugins.
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <BankImportButton />
+            {bank && (
               <button
                 type="button"
                 onClick={() => {
@@ -865,87 +985,70 @@ const GearOptimizer: React.FC = observer(() => {
               >
                 <IconTrash aria-label="Remove imported bank" />
               </button>
-            </div>
-            <div className="flex flex-wrap gap-x-6 items-center">
-              <Toggle
-                checked={includeEquipped}
-                setChecked={setIncludeEquipped}
-                label="Include items worn in your loadouts"
-                help="Bank exports don't include worn items. Enable this to also consider everything equipped in your loadouts."
-              />
-              <Toggle
-                checked={usePrayers}
-                setChecked={setUsePrayers}
-                label="Use offensive prayers"
-                help="If disabled, no offensive prayers are used, and applying a result turns off the loadout's offensive prayers."
-              />
-              <Toggle
-                checked={prayerUnlocks}
-                setChecked={setPrayerUnlocks}
-                disabled={!usePrayers}
-                label="Rigour & Augury unlocked"
-                help="If disabled, Eagle Eye and Mystic Might are used for ranged and magic instead."
-              />
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-300 my-2">
-              {`Uses the current loadout's levels, potions and buffs, with ${
-                // eslint-disable-next-line no-nested-ternary
-                !usePrayers ? 'no offensive prayers' : prayerUnlocks ? 'Piety, Rigour and Augury' : 'Piety, Eagle Eye and Mystic Might'}. `}
-              {'Item and spell requirements are not checked. The search is not exhaustive: around each result it tries every '
-                + 'combination of the most promising items per slot, so setups that need many unlikely items may be missed.'}
-            </p>
-            <div className="my-3">
-              <div className="font-bold mb-1">Styles</div>
-              <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
-                Only search the selected combat styles. Fewer styles make the search faster.
-              </p>
-              <div className="flex flex-wrap gap-x-6 items-center">
-                {OPTIMIZER_STYLES.map((style) => (
-                  <Toggle
-                    key={style}
-                    checked={styles.includes(style)}
-                    setChecked={() => toggleStyle(style)}
-                    label={STYLE_LABELS[style]}
-                  />
-                ))}
+            )}
+          </div>
+        </div>
+        <div className="-mx-5 mb-3">
+          <BankExportDirCopy />
+        </div>
+        <div className="flex flex-wrap gap-6 items-start">
+          <PlayerSettings />
+          <div className="flex-1 min-w-[280px] flex flex-wrap gap-x-6 items-start">
+            <div className="flex-1 min-w-[260px]">
+              <div className="mb-3">
+                <div className="font-bold mb-1">Styles</div>
+                <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
+                  Only search the selected combat styles. Fewer styles make the search faster.
+                </p>
+                <div className="flex flex-wrap gap-x-6 items-center">
+                  {OPTIMIZER_STYLES.map((style) => (
+                    <Toggle
+                      key={style}
+                      checked={styles.includes(style)}
+                      setChecked={() => toggleStyle(style)}
+                      label={STYLE_LABELS[style]}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="my-3 max-w-sm">
-              <div className="font-bold mb-1">Train</div>
-              <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
-                Only use attack stances that give experience in this skill. Attack, Strength and Shared apply to melee;
-                Defence also applies to ranged (Longrange) and magic (Defensive Autocast).
-              </p>
-              <Select
-                id="gear-optimizer-training"
-                items={TRAINING_OPTIONS}
-                value={TRAINING_OPTIONS.find((o) => o.value === training)}
-                onSelectedItemChange={(i) => setTraining(i?.value)}
-              />
-            </div>
-            <div className="my-3">
-              <div className="font-bold mb-1">Minimum gear weight</div>
-              <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
-                Only return setups whose equipment weighs at least this much (in kg), for content that requires it. Set to 0
-                to ignore weight. A minimum weight makes the search go deeper, so it takes longer.
-              </p>
-              <div className="flex items-center gap-2">
-                <NumberInput
-                  id="gear-optimizer-min-weight"
-                  className="form-control w-20"
-                  value={minWeight}
-                  min={0}
-                  max={500}
-                  step={0.1}
-                  onChange={(v) => setMinWeight(Number.isFinite(v) ? v : 0)}
+              <div className="my-3 max-w-sm">
+                <div className="font-bold mb-1">Train</div>
+                <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
+                  Only use attack stances that give experience in this skill. Attack, Strength and Shared apply to melee;
+                  Defence also applies to ranged (Longrange) and magic (Defensive Autocast).
+                </p>
+                <Select
+                  id="gear-optimizer-training"
+                  items={TRAINING_OPTIONS}
+                  value={TRAINING_OPTIONS.find((o) => o.value === training)}
+                  onSelectedItemChange={(i) => store.updateOptimizerSettings({ training: i?.value })}
                 />
-                <span className="text-xs text-gray-500 dark:text-gray-300">kg</span>
+              </div>
+              <div className="my-3">
+                <div className="font-bold mb-1">Minimum gear weight</div>
+                <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
+                  Only return setups whose equipment weighs at least this much (in kg), for content that requires it. Set to 0
+                  to ignore weight. A minimum weight makes the search go deeper, so it takes longer.
+                </p>
+                <div className="flex items-center gap-2">
+                  <NumberInput
+                    id="gear-optimizer-min-weight"
+                    className="form-control w-20"
+                    value={minWeight}
+                    min={0}
+                    max={500}
+                    step={0.1}
+                    onChange={(v) => store.updateOptimizerSettings({ minWeight: Number.isFinite(v) ? v : 0 })}
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-300">kg</span>
+                </div>
               </div>
             </div>
-            <SlotLocks equipment={player.equipment} lockedSlots={lockedSlots} setLockedSlots={setLockedSlots} />
-            <ExcludedItems owned={ownedAll} />
-            {searchStyles.includes('ranged') && <IgnoredAmmo />}
-            {searchStyles.includes('magic') && (
+            {/* the first section's top margin is dropped, so that both columns line up */}
+            <div className="flex-1 min-w-[260px] [&>*:first-child]:mt-0">
+              <ExcludedItems owned={ownedAll} />
+              {searchStyles.includes('ranged') && <IgnoredAmmo />}
+              {searchStyles.includes('magic') && (
               <div className="my-3 max-w-sm">
                 <div className="font-bold mb-1">Spell</div>
                 <p className="text-xs text-gray-500 dark:text-gray-300 mb-1.5">
@@ -955,94 +1058,104 @@ const GearOptimizer: React.FC = observer(() => {
                   id="gear-optimizer-spell"
                   items={SPELL_OPTIONS}
                   value={SPELL_OPTIONS.find((o) => o.value === spell)}
-                  onSelectedItemChange={(i) => setSpell(i?.value)}
+                  onSelectedItemChange={(i) => store.updateOptimizerSettings({ spell: i?.value })}
                 />
               </div>
-            )}
-            {searchStyles.includes('magic') && !castSpell && <ExcludedSpells />}
-            <div className="flex flex-wrap items-center gap-3 my-3">
-              <button
-                type="button"
-                className="form-control font-bold"
-                disabled={!!running || owned.length === 0 || searchStyles.length === 0}
-                onClick={run}
-              >
-                {`Find best gear vs ${monster.name}`}
-              </button>
-              {running && (
-                <span className="flex items-center text-xs text-gray-500 dark:text-gray-300">
-                  <Spinner className="w-5" />
-                  {`Searching${progress ? ` (${progress.stylesDone}/${searchStyles.length} styles done)` : ''}... `}
-                  {`${(progress?.evaluations ?? 0).toLocaleString()} setups simulated · ${Math.max(0, (now - running.start) / 1000).toFixed(0)}s`}
-                </span>
               )}
-              {result && !running && (
-                <span className={`text-xs ${isStale ? 'text-orange-500' : 'text-gray-500 dark:text-gray-300'}`}>
-                  {isStale
-                    ? 'Inputs have changed since this search. Run it again to update the results.'
-                    : `Searched ${result.data.evaluations.toLocaleString()} setups in ${(result.elapsed / 1000).toFixed(1)}s`}
-                </span>
-              )}
+              {searchStyles.includes('magic') && !castSpell && <ExcludedSpells />}
             </div>
-            {result && (
-              <div className={`overflow-x-auto ${isStale ? 'opacity-60' : ''}`}>
-                {result.data.summary && <SearchSummary result={result.data} elapsed={result.elapsed} />}
-                {result.styles.map((style) => (
-                  <div key={style} className="mb-4">
-                    <h4 className="font-serif font-bold mb-1">
-                      {STYLE_LABELS[style]}
-                      {style === 'magic' && result.spell && (
-                        <span className="font-sans font-normal text-xs text-gray-500 dark:text-gray-300">{` (${result.spell} only)`}</span>
-                      )}
-                    </h4>
-                    {result.data[style].length === 0 ? (
-                      <p className="text-gray-500 dark:text-gray-300">
-                        {/* eslint-disable-next-line no-nested-ternary */}
-                        {result.hadFilters
-                          ? "No usable setups found with the locked slots, training choice and minimum weight (for example, the locked weapon can't attack with this style, has no stance that trains the chosen skill, or your gear for this style can't reach the minimum weight)."
-                          : style === 'magic' && result.spell
-                            ? `No usable setups found that can cast ${result.spell}.`
-                            : 'No usable setups found.'}
-                      </p>
-                    ) : (
-                      <table className="w-full">
-                        <thead>
-                          <tr className="text-left text-xs text-gray-500 dark:text-gray-300">
-                            <th className="px-2">#</th>
-                            <th className="px-2">Weapon</th>
-                            <th className="px-2">Equipment</th>
-                            <th className="px-2 text-right">DPS</th>
-                            <th className="px-2 text-right">Max hit</th>
-                            <th className="px-2 text-right">Accuracy</th>
-                            <th
-                              className="px-2 text-right whitespace-nowrap cursor-help underline decoration-dotted"
-                              data-tooltip-id="tooltip"
-                              data-tooltip-content="The average damage you take from the monster per kill, and per second below it. The search doesn't take it into account."
-                            >
-                              Dmg taken
-                            </th>
-                            <th className="px-2 text-right">Weight</th>
-                            <th className="px-2"><span className="sr-only">Actions</span></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {result.data[style].map((l, i) => (
-                            <LoadoutRow
-                              // eslint-disable-next-line react/no-array-index-key
-                              key={i}
-                              loadout={l}
-                              rank={i + 1}
-                              canCreateLoadout={store.canCreateLoadout}
-                            />
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                ))}
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-300 my-3">
+          {`Prayers: ${prayers.length > 0 ? prayers.map((p) => PrayerMap[p].name).join(', ') : 'none'}. `}
+          {'Item and spell requirements are not checked. The search is not exhaustive: around each result it tries every '
+            + 'combination of the most promising items per slot, so setups that need many unlikely items may be missed.'}
+        </p>
+        <div className="flex flex-wrap items-center justify-end gap-3 my-3">
+          {running && (
+            <span className="flex items-center text-xs text-gray-500 dark:text-gray-300">
+              <Spinner className="w-5" />
+              {`Searching${progress ? ` (${progress.stylesDone}/${searchStyles.length} styles done)` : ''}... `}
+              {`${(progress?.evaluations ?? 0).toLocaleString()} setups simulated · ${Math.max(0, (now - running.start) / 1000).toFixed(0)}s`}
+            </span>
+          )}
+          {result && !running && (
+            <span className={`text-xs ${isStale ? 'text-orange-500' : 'text-gray-500 dark:text-gray-300'}`}>
+              {isStale
+                ? 'Inputs have changed since this search. Run it again to update the results.'
+                : `Searched ${result.data.evaluations.toLocaleString()} setups in ${(result.elapsed / 1000).toFixed(1)}s`}
+            </span>
+          )}
+          <button
+            type="button"
+            className="form-control font-bold"
+            disabled={!!running || owned.length === 0 || searchStyles.length === 0}
+            onClick={run}
+            data-tooltip-id="tooltip"
+            data-tooltip-content={`Search your bank for the best gear against ${monster.name}`}
+          >
+            Find best gear
+          </button>
+        </div>
+        {result && (
+          <div className={`overflow-x-auto ${isStale ? 'opacity-60' : ''}`}>
+            {result.data.summary && <SearchSummary result={result.data} elapsed={result.elapsed} />}
+            {result.styles.map((style) => (
+              <div key={style} className="mb-4">
+                <h4 className="font-serif font-bold mb-1">
+                  {STYLE_LABELS[style]}
+                  {style === 'magic' && result.spell && (
+                    <span className="font-sans font-normal text-xs text-gray-500 dark:text-gray-300">{` (${result.spell} only)`}</span>
+                  )}
+                </h4>
+                {result.data[style].length === 0 ? (
+                  <p className="text-gray-500 dark:text-gray-300">
+                    {/* eslint-disable-next-line no-nested-ternary */}
+                    {result.hadFilters
+                      ? "No usable setups found with the locked slots, training choice and minimum weight (for example, the locked weapon can't attack with this style, has no stance that trains the chosen skill, or your gear for this style can't reach the minimum weight)."
+                      : style === 'magic' && result.spell
+                        ? `No usable setups found that can cast ${result.spell}.`
+                        : 'No usable setups found.'}
+                  </p>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-500 dark:text-gray-300">
+                        <th className="px-2">#</th>
+                        <th className="px-2">Weapon</th>
+                        <th className="px-2">Equipment</th>
+                        <th className="px-2 text-right">DPS</th>
+                        <th className="px-2 text-right">Max hit</th>
+                        <th className="px-2 text-right">Accuracy</th>
+                        <th
+                          className="px-2 text-right whitespace-nowrap cursor-help underline decoration-dotted"
+                          data-tooltip-id="tooltip"
+                          data-tooltip-content="The average damage you take from the monster per kill, and per second below it. The search doesn't take it into account."
+                        >
+                          Dmg taken
+                        </th>
+                        <th className="px-2 text-right">Weight</th>
+                        <th className="px-2"><span className="sr-only">Actions</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.data[style].map((l, i) => (
+                        <LoadoutRow
+                          // eslint-disable-next-line react/no-array-index-key
+                          key={i}
+                          loadout={l}
+                          next={result.data[style][i + 1]}
+                          base={result.base}
+                          rank={i + 1}
+                          canCreateLoadout={store.canCreateLoadout}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
-            )}
-          </>
+            ))}
+          </div>
         )}
       </div>
     </SectionAccordion>
