@@ -1,0 +1,12 @@
+.idea/
+.next/
+out/
+node_modules/
+coverage/
+desktop/
+scripts/.venv/
+.yarn/install-state.gz
+.env*.local
+# Images are loaded from the wiki's CDN; only cdn/json is bundled into the app.
+cdn/equipment/
+cdn/monsters/

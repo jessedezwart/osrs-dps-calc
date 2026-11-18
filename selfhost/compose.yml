@@ -1,0 +1,14 @@
+# Run from the repo root: docker compose -f selfhost/compose.yml up -d --build
+# Then open http://localhost:8080 (set BASE_URL to the public URL when hosting it somewhere else).
+services:
+  osrs-dps:
+    build:
+      context: ..
+      dockerfile: selfhost/Dockerfile
+      args:
+        BASE_URL: ${BASE_URL:-http://localhost:8080}
+    image: osrs-dps:local
+    container_name: osrs-dps
+    restart: unless-stopped
+    ports:
+      - "8080:80"
