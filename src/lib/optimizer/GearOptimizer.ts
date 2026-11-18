@@ -23,7 +23,7 @@ import {
 import {
   ammoWorksWith, firedAmmoEffectOf, pruneDominated, relevantStats, unusedAmmoStats, weaponRequiresAmmo,
 } from './items';
-import { getPrayers, getStyles } from './styles';
+import { canCast, getPrayers, getStyles } from './styles';
 import plan from './plan';
 import { refine } from './descent';
 import descendWithPairSwaps from './pairSwap';
@@ -294,6 +294,7 @@ class GearOptimizer {
    * Runs the DPS calculation for the config (uncached), optionally with different levels and boosts.
    */
   evaluate(c: Config, base: Player = this.base): Score {
+    if (!canCast(c.equipment, c.style, c.spell)) return EMPTY_SCORE;
     try {
       const player = this.toPlayer(c, base);
       const calc = new PlayerVsNPCCalc(player, this.monster, {

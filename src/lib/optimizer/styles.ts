@@ -1,8 +1,9 @@
 import { CombatStyleStance, PlayerCombatStyle } from '@/types/PlayerCombatStyle';
-import { EquipmentPiece } from '@/types/Player';
+import { EquipmentPiece, PlayerEquipment } from '@/types/Player';
+import { Spell } from '@/types/Spell';
 import { Prayer, PrayerMap, prayersConflict } from '@/enums/Prayer';
 import { EquipmentCategory } from '@/enums/EquipmentCategory';
-import { CAST_STANCES } from '@/lib/constants';
+import { AUTOCAST_STANCES, CAST_STANCES } from '@/lib/constants';
 import { getCombatStylesForCategory } from '@/utils';
 import { MELEE_TYPES } from './constants';
 import { OptimizerOpts, OptimizerStyle, TrainingSkill } from './types';
@@ -73,6 +74,23 @@ export const stanceTrains = (style: PlayerCombatStyle, family: OptimizerStyle, c
   }
   return style.stance === 'Defensive Autocast'
     || (style.stance === 'Longrange' && [EquipmentCategory.POWERED_STAFF, EquipmentCategory.POWERED_WAND].includes(category));
+};
+
+/** The weapons that can autocast Ancient Magicks (Ahrim's staff only with an Amulet of the damned). */
+const ANCIENT_AUTOCAST_WEAPONS = [
+  /^Ancient staff/, /ancient sceptre/i, /^Master wand/, /^Kodai wand/, /nightmare staff/i, /^Zuriel's staff/,
+  /^(Thammaron's|Accursed) sceptre/,
+];
+
+/**
+ * Whether the equipment can cast the spell with the style. Any weapon can manually cast, but only some can autocast
+ * Ancient Magicks.
+ */
+export const canCast = (equipment: PlayerEquipment, style: PlayerCombatStyle, spell: Spell | null): boolean => {
+  if (spell?.spellbook !== 'ancient' || !AUTOCAST_STANCES.includes(style.stance)) return true;
+  const weapon = equipment.weapon?.name || '';
+  if (/^Ahrim's staff/.test(weapon)) return /^amulet of the damned/i.test(equipment.neck?.name || '');
+  return ANCIENT_AUTOCAST_WEAPONS.some((r) => r.test(weapon));
 };
 
 /**
