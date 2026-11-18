@@ -524,6 +524,27 @@ describe('optimizeGear', () => {
     });
   });
 
+  describe('ancient magicks', () => {
+    const blitz = { ...opts, spell: 'Ice Blitz' };
+    const magicWeapons = (bank: EquipmentPiece[]) => optimizeGear(bank, player, monster, blitz).magic
+      .filter((l) => l.style.stance !== 'Manual Cast')
+      .map((l) => l.equipment);
+
+    test('only weapons that can autocast them are used to autocast', () => {
+      const weapons = magicWeapons(ownedByName(["Ahrim's staff", 'Ancient staff', 'Mystic fire staff']))
+        .map((e) => e.weapon?.name);
+      expect(weapons).toContain('Ancient staff');
+      expect(weapons).not.toContain("Ahrim's staff");
+      expect(weapons).not.toContain('Mystic fire staff');
+    });
+
+    test("Ahrim's staff autocasts them with an Amulet of the damned", () => {
+      const ahrims = magicWeapons(ownedByName(["Ahrim's staff", 'Amulet of the Damned']))
+        .find((e) => e.weapon?.name === "Ahrim's staff");
+      expect(ahrims?.neck?.name).toMatch(/^Amulet of the damned/i);
+    });
+  });
+
   // setups that need several things to change at once, which single and pair swaps can't find on their own
   describe('escaping local optima', () => {
     const noTask = { buffs: { onSlayerTask: false } };
