@@ -3,9 +3,9 @@ import { observer } from 'mobx-react-lite';
 import { toJS } from 'mobx';
 import { toast } from 'react-toastify';
 import { IconTrash } from '@tabler/icons-react';
-import { useStore } from '@/state';
+import { useStore } from '@/state/RootStore';
 import { useOptimizer } from '@/optimizerState';
-import { useCalc } from '@/worker/CalcWorker';
+import { CalcWorker } from '@/worker/CalcWorker';
 import { OptimizeGearRequest, WorkerRequestType } from '@/worker/CalcWorkerTypes';
 import SectionAccordion from '@/app/components/generic/SectionAccordion';
 import Toggle from '@/app/components/generic/Toggle';
@@ -42,12 +42,25 @@ const SPELL_OPTIONS: { label: string, value: string | undefined }[] = [
   ...ALL_SPELLS.map((sp) => ({ label: sp.name, value: sp.name })),
 ];
 
+/**
+ * A calc worker of its own, so that a long search doesn't hold up the main calculations.
+ */
+const useOptimizerWorker = (): CalcWorker => {
+  const [calc] = useState(() => new CalcWorker());
+  useEffect(() => {
+    calc.initWorker();
+    return () => calc.shutdown();
+  }, [calc]);
+  return calc;
+};
+
 const GearOptimizer: React.FC = observer(() => {
-  const calc = useCalc();
+  const calc = useOptimizerWorker();
   const store = useStore();
   const optimizer = useOptimizer();
-  const { monster } = store;
+  const monster = store.monster.snapshot;
   const { bank, settings } = optimizer;
+  const { skills, boosts, buffs } = optimizer.player.snapshot;
   const {
     styles, training, spell, minWeight, locked, prayers, wilderness,
   } = settings;
@@ -77,7 +90,7 @@ const GearOptimizer: React.FC = observer(() => {
     wilderness: boolean,
   }>();
 
-  const equippedIds = JSON.stringify(store.loadouts.flatMap((l) => Object.values(l.equipment)
+  const equippedIds = JSON.stringify(store.loadouts.loadouts.flatMap((l) => Object.values(l.equipment)
     .filter(isDefined)
     .flatMap((e) => [e.id, e.itemVars?.blowpipeDartId].filter(isDefined))));
 
@@ -103,7 +116,7 @@ const GearOptimizer: React.FC = observer(() => {
 
   // used to tell whether the results are out of date
   const inputsKey = JSON.stringify([
-    toJS(monster), toJS(settings.skills), toJS(settings.boosts), toJS(settings.buffs), owned.map((o) => o.id), toJS(prayers),
+    monster, skills, boosts, buffs, owned.map((o) => o.id), toJS(prayers),
     toJS(locked), training ?? null, castSpell ? null : toJS(optimizer.excludedSpells), minWeight, searchStyles, castSpell ?? null,
     toJS(optimizer.ignoredAmmo), wilderness.enabled ? toJS(wilderness) : null,
   ]);
@@ -150,7 +163,7 @@ const GearOptimizer: React.FC = observer(() => {
       data: {
         owned,
         player,
-        monster: toJS(monster),
+        monster,
         opts: {
           prayers: toJS(prayers),
           locked: toJS(locked),
@@ -411,7 +424,7 @@ const GearOptimizer: React.FC = observer(() => {
                           next={result.data[style][i + 1]}
                           base={result.base}
                           rank={i + 1}
-                          canCreateLoadout={store.canCreateLoadout}
+                          canCreateLoadout={store.loadouts.canCreate}
                         />
                       ))}
                     </tbody>

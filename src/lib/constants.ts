@@ -23,6 +23,10 @@ export const BABA_IDS = [
   11778, 11779, 11780,
 ];
 
+export const BABA_MONKEY_ROOM_IDS = [
+  11781, 11709, 11712, 11711, 11714, 11715, 11718, 11710, 11713, 11717, 11716,
+];
+
 export const KEPHRI_SHIELDED_IDS = [
   11719,
 ];
@@ -74,6 +78,7 @@ export const TOMBS_OF_AMASCUT_PATH_MONSTER_IDS = [
 /** IDs of monsters that are present in Tombs of Amascut * */
 export const TOMBS_OF_AMASCUT_MONSTER_IDS = [
   ...TOMBS_OF_AMASCUT_PATH_MONSTER_IDS,
+  ...BABA_MONKEY_ROOM_IDS,
   ...TOA_OBELISK_IDS,
   ...P2_WARDEN_IDS,
   ...TOA_WARDEN_CORE_EJECTED_IDS,
@@ -507,7 +512,7 @@ export const NPC_HARDCODED_MAX_HIT: { [npcId: number]: number } = {
   5961: 10, // Spinolyp (2)
 };
 
-export const MONSTER_PHASES_BY_ID: { [k: number]: string[] } = {};
+export const MONSTER_PHASES_BY_ID: { [k: number]: readonly string[] } = {};
 export const TD_IDS = [13599, 13600, 13601, 13602, 13603, 13604, 13605, 13606];
 export const TD_PHASES = ['Shielded', 'Shielded (Defenceless)', 'Unshielded'];
 TD_IDS.forEach((id) => { MONSTER_PHASES_BY_ID[id] = TD_PHASES; });
@@ -561,13 +566,17 @@ export const BORK_IDS = [16640];
 export const BORK_PHASES = ['Smork HP 100% - 75%', 'Smork HP 75% - 50%', 'Smork HP 50% - 25%', 'Smork HP 25% - 0%', 'Stunned'];
 BORK_IDS.forEach((id) => { MONSTER_PHASES_BY_ID[id] = BORK_PHASES; });
 
+export const OCELLUS_P3_IDS: readonly number[] = [16677];
+export const OCELLUS_P3_PHASES: readonly string[] = ['Phase 3', 'Phase 4 Standard', 'Phase 4 Explosions - With Speed-Up', 'Phase 4 Explosions - No Speed-Up'];
+OCELLUS_P3_IDS.forEach((id) => { MONSTER_PHASES_BY_ID[id] = OCELLUS_P3_PHASES; });
+
 export const TFA_DEF_FLOOR_NPCS = [
   16659, 16660, // Archive Guardian
   ...BORK_IDS, // Bork
   16652, // Ezekiel
   16667, // Moia
   16684, // Xarth
-  16673, 16674, 16677, // Ocellus
+  16673, 16674, ...OCELLUS_P3_IDS, // Ocellus
 ];
 
 export const DREADNOTH_JELLY_ID = 16666;

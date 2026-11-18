@@ -3,19 +3,22 @@ import { observer } from 'mobx-react-lite';
 import { IconLock } from '@tabler/icons-react';
 import { useOptimizer } from '@/optimizerState';
 import LazyImage from '@/app/components/generic/LazyImage';
-import { Player, PlayerEquipment, PlayerSkills } from '@/types/Player';
+import { PlayerEquipment } from '@/types/Player';
 import { getCdnImage } from '@/utils';
 import PlayerTab from '@/app/components/player/PlayerTab';
-import { SkillsAndBoosts } from '@/app/components/player/Skills';
-import { PrayerGrid } from '@/app/components/player/Prayers';
-import { ExtraOptionsList } from '@/app/components/player/ExtraOptions';
-import EquipmentSelect from '@/app/components/player/equipment/EquipmentSelect';
-import WikiSyncButton from '@/app/components/player/WikiSyncButton';
+import ExtraOptions from '@/app/components/player/ExtraOptions';
+import UsernameLookup from '@/app/components/player/skills/UsernameLookup';
+import SkillInputs from '@/app/components/player/skills/SkillInputs';
+import PotionList from '@/app/components/player/skills/PotionList';
+import WikiSync from '@/app/components/player/header/WikiSync';
+import { PlayerContext } from '@/state/PlayerStore';
 import skillsTab from '@/public/img/tabs/skills.png';
 import equipmentTab from '@/public/img/tabs/equipment.png';
 import optionsTab from '@/public/img/tabs/options.webp';
 import prayerTab from '@/public/img/tabs/prayer.png';
 import { DISPLAY_SLOTS, SLOT_PLACEHOLDERS } from './constants';
+import PrayerGrid from './PrayerGrid';
+import LockSelect from './LockSelect';
 
 /**
  * Lets the user lock slots to an item (or to being empty) while the rest of the gear is searched.
@@ -59,13 +62,7 @@ const SlotLocks: React.FC = observer(() => {
           );
         })}
       </div>
-      <EquipmentSelect
-        id="gear-optimizer-lock-select"
-        placeholder="Lock a slot to an item..."
-        onSelectedItemChange={(option) => {
-          if (option) optimizer.setLock(option.equipment.slot as keyof PlayerEquipment, option.equipment);
-        }}
-      />
+      <LockSelect onSelect={(option) => optimizer.setLock(option.equipment.slot as keyof PlayerEquipment, option.equipment)} />
     </div>
   );
 });
@@ -89,23 +86,26 @@ const PlayerSettings: React.FC = observer(() => {
         <PlayerTab name="Extra options" isActive={tab === 'options'} image={optionsTab} onClick={() => setTab('options')} />
       </div>
       {tab === 'skills' && (
-        <SkillsAndBoosts
-          skills={settings.skills}
-          boosts={settings.boosts}
-          potions={settings.buffs.potions}
-          onChange={(change) => optimizer.updateSettings(change)}
-          togglePotion={optimizer.togglePotion}
-          onLookup={optimizer.fetchSkills}
-          lookupExtra={(
-            <WikiSyncButton
-              id="gear-optimizer-wikisync"
-              onImport={(p) => optimizer.updateSettings({
-                skills: p.skills as Partial<PlayerSkills>,
-                buffs: p.buffs as Partial<Player['buffs']>,
-              })}
-            />
-          )}
-        />
+        // the upstream components edit the player in context, which is the optimizer's own player here
+        <PlayerContext.Provider value={optimizer.player}>
+          <div className="px-4 mt-4 flex flex-col mb-6 grow">
+            <div className="flex items-center gap-1">
+              <UsernameLookup />
+              <WikiSync id="gear-optimizer-wikisync" />
+            </div>
+            <div className="mt-4">
+              <SkillInputs />
+            </div>
+            <h4 className="mt-4 font-bold font-serif">
+              Boosts
+            </h4>
+            <div
+              className="grow h-48 mt-2 bg-white dark:bg-dark-500 dark:border-dark-200 rounded border border-gray-300 overflow-y-scroll"
+            >
+              <PotionList />
+            </div>
+          </div>
+        </PlayerContext.Provider>
       )}
       {tab === 'prayer' && (
         <div className="px-4 mb-6">
@@ -118,7 +118,9 @@ const PlayerSettings: React.FC = observer(() => {
       )}
       {tab === 'equipment' && <SlotLocks />}
       {tab === 'options' && (
-        <ExtraOptionsList buffs={settings.buffs} onChange={(buffs) => optimizer.updateSettings({ buffs })} />
+        <PlayerContext.Provider value={optimizer.player}>
+          <ExtraOptions />
+        </PlayerContext.Provider>
       )}
     </div>
   );

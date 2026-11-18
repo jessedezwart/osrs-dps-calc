@@ -1,24 +1,22 @@
-import { makeAutoObservable, toJS } from 'mobx';
+import { makeAutoObservable, reaction, toJS } from 'mobx';
 import * as localforage from 'localforage';
 import { PartialDeep } from 'type-fest';
-import { toast } from 'react-toastify';
 import {
   EquipmentPiece, Player, PlayerEquipment, PlayerSkills,
 } from '@/types/Player';
 import { DEFENSIVE_PRAYERS, OFFENSIVE_PRAYERS, Prayer } from '@/enums/Prayer';
-import Potion from '@/enums/Potion';
 import { availableEquipment } from '@/lib/Equipment';
 import { BankItem } from '@/lib/BankImport';
 import { fetchPrices, idsToFetch, PriceCache } from '@/lib/ItemPrices';
 import {
   OPTIMIZER_STYLES, OptimizedLoadout, OptimizerStyle, toggleSearchPrayer, TrainingSkill,
 } from '@/lib/optimizer';
-import { fetchPlayerSkills, PotionMap } from '@/utils';
-import { generateEmptyPlayer, GlobalState, useStore } from '@/state';
+import RootStore, { useStore } from '@/state/RootStore';
+import { createEmptyPlayer, PlayerStore } from '@/state/PlayerStore';
 
 /**
- * The state of the gear optimizer ("Find Best Gear") and the imported bank. It's kept out of the global state (in
- * state.tsx), so that this fork changes as little of the upstream code as possible. Get it with useOptimizer().
+ * The state of the gear optimizer ("Find Best Gear") and the imported bank. It's kept out of the upstream stores (in
+ * src/state/), so that this fork changes as little of the upstream code as possible. Get it with useOptimizer().
  */
 
 export interface BankData {
@@ -35,37 +33,10 @@ const OPTIMIZER_SETTINGS_STORAGE_KEY = 'dps-calc-optimizer-settings';
 const ITEM_PRICES_STORAGE_KEY = 'dps-calc-item-prices';
 
 /**
- * The boosts the potions give, using the highest boost of any of them for each skill. Hitpoints are never boosted, as
- * the current HP is set by hand.
- */
-export const calculatePotionBoosts = (skills: PlayerSkills, potions: Potion[]): Partial<PlayerSkills> => {
-  const boosts: Partial<PlayerSkills> = {
-    atk: 0, def: 0, magic: 0, prayer: 0, ranged: 0, str: 0, mining: 0, herblore: 0, farming: 0,
-  };
-
-  for (const p of potions) {
-    const result = PotionMap[p].calculateFn(skills);
-    for (const k of Object.keys(result)) {
-      const r = result[k as keyof typeof result] as number;
-      if (r > boosts[k as keyof typeof boosts]!) {
-        boosts[k as keyof typeof boosts] = r;
-      }
-    }
-  }
-
-  return boosts;
-};
-
-/**
  * The inputs of the gear optimizer. These are separate from the loadouts, which are for comparing gear sets, and are
  * saved in the browser.
  */
 export interface OptimizerSettings {
-  skills: PlayerSkills;
-  /** The potion boosts, plus the difference between the current and base HP. */
-  boosts: PlayerSkills;
-  /** The potions and the extra options (on slayer task etc.) */
-  buffs: Player['buffs'];
   /** The prayers to use. Each style uses the ones for it, and the ones that aren't for a specific style. */
   prayers: Prayer[];
   /** Slots that are fixed to an item (or to being empty, if null). */
@@ -91,32 +62,30 @@ export interface WildernessSettings {
   skipUntradeables: boolean;
 }
 
-/** A change to the gear optimizer's settings. The skills, boosts and buffs are merged in, the rest is replaced. */
-export type OptimizerSettingsUpdate = Partial<Omit<OptimizerSettings, 'skills' | 'boosts' | 'buffs'>> & {
+/**
+ * The settings as saved in the browser, which also include the levels, boosts and buffs of the optimizer's player.
+ */
+type StoredOptimizerSettings = Partial<OptimizerSettings> & {
   skills?: Partial<PlayerSkills>;
+  /** The potion boosts, plus the difference between the current and base HP. */
   boosts?: Partial<PlayerSkills>;
+  /** The potions and the extra options (on slayer task etc.) */
   buffs?: Partial<Player['buffs']>;
 };
 
-const generateOptimizerSettings = (): OptimizerSettings => {
-  const { skills, boosts, buffs } = generateEmptyPlayer();
-  return {
-    skills,
-    boosts,
-    buffs,
-    prayers: [],
-    locked: {},
-    styles: OPTIMIZER_STYLES,
-    minWeight: 0,
-    wilderness: {
-      enabled: false,
-      maxRisk: 100_000,
-      protectItem: false,
-      skulled: false,
-      skipUntradeables: false,
-    },
-  };
-};
+const generateOptimizerSettings = (): OptimizerSettings => ({
+  prayers: [],
+  locked: {},
+  styles: OPTIMIZER_STYLES,
+  minWeight: 0,
+  wilderness: {
+    enabled: false,
+    maxRisk: 100_000,
+    protectItem: false,
+    skulled: false,
+    skipUntradeables: false,
+  },
+});
 
 /**
  * Reloads the most current data for a stored item using its ID, to ensure we're not using stale data. Returns null if
@@ -146,7 +115,13 @@ const load = <T>(key: string, apply: (value: T) => void, isValid: (value: unknow
 };
 
 export class OptimizerState {
-  private readonly root: GlobalState;
+  private readonly root: RootStore;
+
+  /**
+   * The levels, potions and extra options the search uses, separate from the loadouts. It's a PlayerStore so that the
+   * upstream skill, potion and extra option components can edit it (see PlayerSettings).
+   */
+  readonly player: PlayerStore;
 
   /**
    * The user's imported bank, used by the gear optimizer. Stored separately from the importable data so that it is
@@ -179,9 +154,12 @@ export class OptimizerState {
 
   private loaded = false;
 
-  constructor(root: GlobalState) {
+  constructor(root: RootStore) {
     this.root = root;
-    makeAutoObservable<OptimizerState, 'root' | 'loaded'>(this, { root: false, loaded: false }, { autoBind: true });
+    this.player = new PlayerStore(root.monster, root.preferences, 'Gear optimizer');
+    makeAutoObservable<OptimizerState, 'root' | 'player' | 'loaded'>(this, {
+      root: false, player: false, loaded: false,
+    }, { autoBind: true });
   }
 
   /** Loads everything saved in the browser. Only the first call does anything. */
@@ -194,7 +172,10 @@ export class OptimizerState {
     load<string[]>(EXCLUDED_SPELLS_STORAGE_KEY, (v) => { this.excludedSpells = v; }, Array.isArray);
     load<string[]>(IGNORED_AMMO_STORAGE_KEY, (v) => { this.ignoredAmmo = v; }, Array.isArray);
     load<PriceCache>(ITEM_PRICES_STORAGE_KEY, (v) => { this.itemPrices = v; });
-    load<OptimizerSettingsUpdate>(OPTIMIZER_SETTINGS_STORAGE_KEY, ({ locked, wilderness, ...settings }) => {
+    load<StoredOptimizerSettings>(OPTIMIZER_SETTINGS_STORAGE_KEY, ({
+      locked, wilderness, skills, boosts, buffs, ...settings
+    }) => {
+      this.player.update({ skills, buffs, boosts });
       // reload the locked items' data, and drop the locks of items that no longer exist
       const refreshedLocks: Partial<PlayerEquipment> = {};
       for (const [slot, item] of Object.entries(locked || {})) {
@@ -209,33 +190,20 @@ export class OptimizerState {
         wilderness: { ...this.settings.wilderness, ...wilderness },
       });
     });
+
+    reaction(() => this.storedSettings, (v) => save(OPTIMIZER_SETTINGS_STORAGE_KEY, v));
   }
 
-  /**
-   * Changes the gear optimizer's settings, and saves them. The potion boosts are recomputed if the levels or potions
-   * change.
-   */
-  updateSettings(update: OptimizerSettingsUpdate) {
-    const current = this.settings;
-    const next: OptimizerSettings = {
-      ...current,
-      ...update,
-      skills: { ...current.skills, ...update.skills },
-      boosts: { ...current.boosts, ...update.boosts },
-      buffs: { ...current.buffs, ...update.buffs },
+  private get storedSettings(): StoredOptimizerSettings {
+    const { skills, boosts, buffs } = this.player.snapshot;
+    return {
+      ...this.settings, skills, boosts, buffs,
     };
-    if (update.skills || update.buffs?.potions) {
-      next.boosts = { ...next.boosts, ...calculatePotionBoosts(next.skills, next.buffs.potions) };
-    }
-    this.settings = next;
-    save(OPTIMIZER_SETTINGS_STORAGE_KEY, this.settings);
   }
 
-  togglePotion(potion: Potion) {
-    const { potions } = this.settings.buffs;
-    this.updateSettings({
-      buffs: { potions: potions.includes(potion) ? potions.filter((p) => p !== potion) : [...potions, potion] },
-    });
+  /** Changes the gear optimizer's settings. They (and the optimizer's player) are saved once load() has run. */
+  updateSettings(update: Partial<OptimizerSettings>) {
+    this.settings = { ...this.settings, ...update };
   }
 
   togglePrayer(prayer: Prayer) {
@@ -262,41 +230,14 @@ export class OptimizerState {
    * The player that the gear optimizer searches with: the optimizer's levels, boosts and extra options, with no gear.
    */
   get basePlayer(): Player {
-    const {
-      skills, boosts, buffs, wilderness,
-    } = this.settings;
+    const { skills, boosts, buffs } = this.player.snapshot;
     return {
-      ...generateEmptyPlayer(),
-      skills: toJS(skills),
-      boosts: toJS(boosts),
+      ...createEmptyPlayer(),
+      skills,
+      boosts,
       // wilderness weapons (Craw's bow etc.) only get their bonus in the Wilderness
-      buffs: { ...toJS(buffs), inWilderness: buffs.inWilderness || wilderness.enabled },
+      buffs: { ...buffs, inWilderness: buffs.inWilderness || this.settings.wilderness.enabled },
     };
-  }
-
-  /**
-   * Looks up the levels of the username entered in the calculator, for the gear optimizer.
-   */
-  async fetchSkills() {
-    const { username } = this.root.ui;
-
-    try {
-      const res = await toast.promise(
-        fetchPlayerSkills(username),
-        {
-          pending: 'Fetching player skills...',
-          success: `Successfully fetched player skills for ${username}!`,
-          error: 'Error fetching player skills',
-        },
-        {
-          toastId: 'skills-fetch',
-        },
-      );
-
-      if (res) this.updateSettings({ skills: res });
-    } catch (e) {
-      console.error(e);
-    }
   }
 
   /**
@@ -368,35 +309,34 @@ export class OptimizerState {
    * @param base the levels, boosts and buffs the optimizer searched with
    */
   applyLoadout(result: OptimizedLoadout, asNewLoadout: boolean, base: Pick<Player, 'skills' | 'boosts' | 'buffs'>) {
-    const { root } = this;
-    if (asNewLoadout && root.canCreateLoadout) {
-      root.createLoadout(true, root.selectedLoadout);
+    const { loadouts } = this.root;
+    if (asNewLoadout && loadouts.canCreate) {
+      loadouts.create({ select: true, cloneFrom: loadouts.selectedUuid });
     }
+    const loadout = loadouts.currentLoadout;
 
-    // Clear everything first, so that no properties (such as blowpipe darts) are merged in from the old items
-    root.updatePlayer({ equipment: generateEmptyPlayer().equipment });
-    root.updatePlayer({
+    // Piety, Rigour and Augury are also defensive prayers, so clear both groups to avoid conflicts
+    const prayers = loadout.prayers.filter((p) => !OFFENSIVE_PRAYERS.includes(p) && !DEFENSIVE_PRAYERS.includes(p));
+
+    // Clear the equipment first, so that no properties (such as blowpipe darts) are kept from the old items
+    loadout.update({ equipment: createEmptyPlayer().equipment });
+    loadout.update({
       equipment: result.equipment,
       style: result.style,
       spell: result.spell,
+      prayers: [...prayers, ...result.prayers],
       skills: base.skills,
       buffs: base.buffs,
     });
-    // the potions are replaced rather than merged by index, and the boosts include the current HP (which the potions
-    // don't set)
-    root.player.buffs.potions = [...base.buffs.potions];
-    root.updatePlayer({ boosts: base.boosts });
-
-    // Piety, Rigour and Augury are also defensive prayers, so clear both groups to avoid conflicts
-    const prayers = root.player.prayers.filter((p) => !OFFENSIVE_PRAYERS.includes(p) && !DEFENSIVE_PRAYERS.includes(p));
-    root.player.prayers = [...prayers, ...result.prayers];
+    // after the levels and potions, as the boosts include the current HP (which the potions don't set)
+    loadout.update({ boosts: base.boosts });
   }
 }
 
-const optimizerStates = new WeakMap<GlobalState, OptimizerState>();
+const optimizerStates = new WeakMap<RootStore, OptimizerState>();
 
-/** The gear optimizer state that belongs to this global state. */
-export const getOptimizerState = (root: GlobalState): OptimizerState => {
+/** The gear optimizer state that belongs to this root store. */
+export const getOptimizerState = (root: RootStore): OptimizerState => {
   let state = optimizerStates.get(root);
   if (!state) {
     state = new OptimizerState(root);

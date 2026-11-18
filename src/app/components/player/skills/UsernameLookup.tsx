@@ -1,17 +1,13 @@
 import React, { useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { useStore } from '@/state';
-import localforage from 'localforage';
+import { toast } from 'react-toastify';
+import { usePlayer } from '@/state/PlayerStore';
+import { usePreferences } from '@/state/PreferencesStore';
 
-interface IUsernameLookupProps {
-  /** Looks up the levels. Defaults to filling them in for the current loadout. */
-  onLookup?: () => Promise<void>;
-}
-
-const UsernameLookup: React.FC<IUsernameLookupProps> = observer(({ onLookup }) => {
-  const store = useStore();
-  const username = store.ui.username || '';
-  const shouldRemember = store.prefs.rememberUsername;
+const UsernameLookup: React.FC = observer(() => {
+  const player = usePlayer();
+  const preferences = usePreferences();
+  const { username } = preferences;
   const [btnDisabled, setBtnDisabled] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
 
@@ -22,13 +18,7 @@ const UsernameLookup: React.FC<IUsernameLookupProps> = observer(({ onLookup }) =
         className="form-control rounded w-full mt-auto"
         placeholder="OSRS username"
         value={username}
-        onChange={(e) => {
-          store.updateUIState({ username: e.currentTarget.value });
-          if (shouldRemember) {
-            localforage.setItem('dps-calc-username', e.currentTarget.value).catch(() => {
-            });
-          }
-        }}
+        onChange={(e) => preferences.update({ username: e.currentTarget.value })}
         onKeyUp={(e) => {
           if (e.key === 'Enter') {
             btn.current?.click();
@@ -42,8 +32,21 @@ const UsernameLookup: React.FC<IUsernameLookupProps> = observer(({ onLookup }) =
         className="ml-1 text-sm btn"
         onClick={async () => {
           setBtnDisabled(true);
-          await (onLookup ?? store.fetchCurrentPlayerSkills)();
-          setBtnDisabled(false);
+          try {
+            await toast.promise(
+              player.fetchSkills(username),
+              {
+                pending: 'Fetching player skills...',
+                success: `Successfully fetched player skills for ${username}!`,
+                error: 'Error fetching player skills',
+              },
+              { toastId: 'skills-fetch' },
+            );
+          } catch (e) {
+            console.error(e);
+          } finally {
+            setBtnDisabled(false);
+          }
         }}
       >
         Lookup

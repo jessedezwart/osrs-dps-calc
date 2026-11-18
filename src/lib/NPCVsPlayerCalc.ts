@@ -3,7 +3,7 @@ import { Player } from '@/types/Player';
 import { Monster } from '@/types/Monster';
 // import { OVERHEAD_PRAYERS, Prayer } from '@/enums/Prayer';
 import {
-  AttackDistribution, HitDistribution, Hitsplat, WeightedHit,
+  AttackDistribution, flatAddTransformer, HitDistribution, Hitsplat, WeightedHit,
 } from '@/lib/HitDist';
 import { ALWAYS_ACCURATE_MONSTERS, NPC_HARDCODED_MAX_HIT, SECONDS_PER_TICK } from '@/lib/constants';
 import PlayerVsNPCCalc from '@/lib/PlayerVsNPCCalc';
@@ -101,6 +101,10 @@ export default class NPCVsPlayerCalc extends BaseCalc {
       ]);
     }
 
+    if (this.wearing('Rondache')) {
+      dist = dist.transform(flatAddTransformer(-2), { transformInaccurate: false });
+    }
+
     // There's some monsters that can hit through prayers, but let's worry about that later
     // const style = this.monster.style || '';
     // if (
@@ -148,7 +152,7 @@ export default class NPCVsPlayerCalc extends BaseCalc {
     if (this.isWearingTorags()) {
       const currentHealth = skills.hp + boosts.hp;
       const missingHealth = ((Math.round((skills.hp - currentHealth) / skills.hp * 100) / 100) * 100);
-      effectiveLevel = this.trackFactor(DetailKey.PLAYER_DEFENCE_ROLL_LEVEL_TORAGS, effectiveLevel, [1 + missingHealth, 100]);
+      effectiveLevel = this.trackFactor(DetailKey.PLAYER_DEFENCE_ROLL_LEVEL_TORAGS, effectiveLevel, [100 + missingHealth, 100]);
     }
 
     if (style === 'magic') {
