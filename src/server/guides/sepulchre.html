@@ -1,0 +1,1087 @@
+<title>Hallowed Sepulchre Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: stat strip header with refresh control, then a two-column board: gear (wide) beside mechanics + CAs, trivia full width below.
+   Shared by every guide: content from guides/<slug>.json, data from /guide-data (see guidePage.js). */
+:root{
+  --bg:#f3f4ef; --panel:#ffffff; --fg:#1d221c; --muted:#5f6a5c; --line:#dde2d6;
+  --accent:#7a4a24; --accent-soft:#f3e7da;
+  --good:#2f7a3b; --good-soft:#e3f1e3; --bad:#b0412e; --bad-soft:#f7e3de; --warn:#9a6a00; --warn-soft:#f6ecd2;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141812; --panel:#1c211a; --fg:#e7ebe2; --muted:#9aa595; --line:#2e362b;
+  --accent:#d79a63; --accent-soft:#33261b;
+  --good:#7fcf8a; --good-soft:#1f3322; --bad:#f08c78; --bad-soft:#3a221d; --warn:#e6bb55; --warn-soft:#352c16; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141812; --panel:#1c211a; --fg:#e7ebe2; --muted:#9aa595; --line:#2e362b;
+  --accent:#d79a63; --accent-soft:#33261b;
+  --good:#7fcf8a; --good-soft:#1f3322; --bad:#f08c78; --bad-soft:#3a221d; --warn:#e6bb55; --warn-soft:#352c16; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--body)}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:.01em}
+h1{font-size:44px;line-height:1}
+h2{font-size:22px;text-transform:uppercase;letter-spacing:.06em}
+h3{font-size:16px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.num{font-variant-numeric:tabular-nums}
+
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;border-bottom:2px solid var(--fg);padding-bottom:16px}
+.top .sub{color:var(--muted);margin-top:6px}
+.right{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+@media (max-width:640px){.right{align-items:flex-start}}
+.stats{display:flex;flex-wrap:wrap;gap:6px}
+.stat{border:1px solid var(--line);background:var(--panel);padding:6px 10px;border-radius:6px;min-width:70px}
+.stat b{display:block;font-family:var(--mono);font-size:15px;font-weight:500}
+.refresh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.refresh button{font:600 13px var(--body);padding:7px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--panel);cursor:pointer}
+.refresh button:disabled{opacity:.6;cursor:progress}
+.refresh .status{font-size:12px;color:var(--muted)}
+.refresh .status.err{color:var(--bad)}
+
+.board{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.board{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:20px;min-width:0}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.sh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+
+.facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 14px;margin:0}
+.facts dt{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding-top:2px}
+.facts dd{margin:0}
+@media (max-width:480px){.facts{grid-template-columns:minmax(0,1fr)}.facts dd{margin-bottom:6px}}
+
+.styles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.styles{grid-template-columns:minmax(0,1fr)}}
+.style{border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.style.best{border-color:var(--accent);background:var(--accent-soft)}
+.style .dps{font-family:var(--mono);font-size:22px}
+.style .meta{color:var(--muted);font-size:12px}
+.style a{font-size:12px;font-weight:600;margin-top:4px}
+
+.slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--line);border-radius:6px;overflow:hidden}
+@media (max-width:480px){.slots{grid-template-columns:minmax(0,1fr)}}
+.slot{display:flex;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);margin-bottom:-1px}
+.slot:nth-child(odd){border-right:1px solid var(--line)}
+.slot span:first-child{width:58px;flex:none;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding-top:1px}
+.note{font-size:12px;color:var(--muted);margin:0}
+
+.mech{display:flex;flex-direction:column;gap:10px}
+.mech-item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;align-items:start}
+.cue{font-family:var(--mono);font-size:12px;background:var(--warn-soft);color:var(--warn);padding:2px 8px;border-radius:4px;white-space:nowrap}
+.mech-item p{margin:0}
+
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.have{background:var(--good-soft);color:var(--good)}
+.pill.miss{background:var(--bad-soft);color:var(--bad)}
+.pill.tier{background:var(--accent-soft);color:var(--accent)}
+
+.trivia{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:20px}
+@media (max-width:760px){.trivia{grid-template-columns:minmax(0,1fr)}}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;width:80px;display:inline-block;vertical-align:middle;margin-left:8px}
+.bar i{display:block;height:100%;background:var(--good)}
+
+.ca{display:flex;flex-direction:column;gap:12px}
+.ca-item{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:4px}
+.ca-item:first-child{border-top:0;padding-top:0}
+.ca-item .t{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ca-item .t a{font-weight:600}
+.ca-item p{margin:0}
+.ca-item .how{color:var(--muted)}
+.done-all{color:var(--good);font-weight:600}
+footer{font-size:12px;color:var(--muted)}
+ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.alert{border:1px solid var(--bad);background:var(--bad-soft);color:var(--fg);border-radius:8px;padding:10px 14px}
+.alert b{color:var(--bad)}
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script id="main">
+(() => {
+  const SLUG = "sepulchre";
+  const G = {
+ "kind": "activity",
+ "title": "Hallowed Sepulchre",
+ "kicker": "Minigame guide",
+ "subtitle": "Darkmeyer · timed Agility floors with coffins to loot",
+ "kcLabel": "coffins looted",
+ "stats": [
+  [
+   "Agility",
+   "76"
+  ],
+  [
+   "Floors open",
+   "1–3"
+  ],
+  [
+   "To floor 4",
+   "83k xp"
+  ],
+  [
+   "Marks",
+   "40"
+  ]
+ ],
+ "data": {
+  "source": "Hallowed Sepulchre Coffin",
+  "clog": [
+   "Hallowed Sepulchre"
+  ],
+  "dryness": "sepulchre",
+  "dropPage": "Coffin (Hallowed Sepulchre)",
+  "caMonster": false,
+  "quests": [
+   "Sins of the Father"
+  ],
+  "levels": {
+   "Agility": 52
+  }
+ },
+ "factsTitle": "Setup",
+ "gearNote": "Coffin skill requirements all met",
+ "facts": [
+  [
+   "Transportation",
+   "[[Drakan's medallion]] to Darkmeyer {have:Drakan's medallion}, or [[Hallowed crystal shard]]s (1 mark each) once marks are spare."
+  ],
+  [
+   "Requirements",
+   "Floor 4 needs 77 Agility and the entry check is boostable: an [[Agility potion]] (+3) {have:Agility potion(4)} or a bite of [[Summer pie]] (+5) {have:Summer pie} at the end of floor 3. Floor 5 (87) and the [[Grand Hallowed Coffin]] are out of reach."
+  ],
+  [
+   "Required items",
+   "Crossbow + [[Mith grapple]], hammer, saw, planks + nails, [[Vampyre dust]], cosmic runes {have:Mith grapple}"
+  ],
+  [
+   "Gear",
+   "Graceful, [[Holy symbol]] and [[Holy book]] (Saradomin items, so the obelisk at each floor's end refills your run; other god items drain it)."
+  ],
+  [
+   "Inventory",
+   "[[Crystal saw]] + hammer, [[Plank sack]] of oak planks + mithril nails, [[Lockpick]] (better coffin success), rune pouch with cosmic + earth + fire, [[Stamina potion]]s, a little food until the hallowed ring. All owned."
+  ],
+  [
+   "XP/hr and AFK",
+   "~63k looting / ~72k not looting up to floor 3; ~73k / ~81k up to floor 4. Low AFK."
+  ]
+ ],
+ "sections": [
+  {
+   "title": "How it works",
+   "column": "right",
+   "items": [
+    "Run each floor's trap path on a timer: 2 minutes for floor 1, plus 2 more per floor. Leftover time carries over.",
+    "Clear a coffin's obstacle (bridge, brazier, portal, grapple pillar), then loot it for [[Hallowed mark]]s and loot. A failed loot poisons you.",
+    "Traps knock you back; time, not HP, is the real cost.",
+    "Leave with the obelisk at any floor's end. That's also the only roll for the [[Giant squirrel]]."
+   ]
+  },
+  {
+   "title": "Strategy",
+   "column": "right",
+   "note": "Solo",
+   "items": [
+    "**Now:** floors 1–3 every run. Don't loot floors 1–2. On floor 3 loot the bridge and portal coffins, skip grapple and brazier.",
+    "**Early on:** loot more coffins to build marks for the ring and grapple, and to roll the Mysterious pages (one per floor).",
+    "**Floor 4:** about 1¼ hours of floor 3 runs gets you 77 (or boost now). Then floors 1–4, looting everything on floor 4 except the brazier coffin.",
+    "Buy a private instance (200 marks) so other players don't throw off the trap timings."
+   ]
+  },
+  {
+   "title": "Rewards worth it",
+   "column": "full",
+   "note": "You have 40 marks",
+   "head": [
+    "#",
+    "Reward",
+    "Marks",
+    "Why"
+   ],
+   "right": [
+    2
+   ],
+   "rows": [
+    [
+     "1",
+     "[[Hallowed grapple]]",
+     "100",
+     "Pillars never fail. Buy the ring first if you keep hitting traps."
+    ],
+    [
+     "2",
+     "[[Hallowed ring]]",
+     "250",
+     "No trap damage and less time lost, so no food."
+    ],
+    [
+     "3",
+     "Private instance",
+     "200",
+     "Steady trap timings. From the Mysterious Stranger."
+    ],
+    [
+     "4",
+     "[[Hallowed focus]], [[Hallowed symbol|symbol]], [[Hallowed hammer|hammer]]",
+     "100 each",
+     "Portals and bridges never fail, half the vampyre dust. Each is a clog slot."
+    ],
+    [
+     "5",
+     "[[Hallowed token]]",
+     "10",
+     "+1 minute. Buy one for the clog slot."
+    ],
+    [
+     "6",
+     "[[Dark dye]] ×6, [[Dark acorn]]",
+     "300 / 3,000",
+     "Cosmetic, clog only. The acorn needs the Giant squirrel."
+    ]
+   ]
+  }
+ ],
+ "notableDrops": [
+  [
+   "Coins, 7.5k–25k",
+   "mid / high table"
+  ],
+  [
+   "Blood, soul, law runes (150–250)",
+   "high table"
+  ],
+  [
+   "Sanfew serum(4), ranarr seeds",
+   "high table"
+  ],
+  [
+   "Medium clue (floor 3), hard clue (floor 4)",
+   "1/25, 1/50"
+  ]
+ ],
+ "clogNotes": {
+  "Hallowed token": "Shop, 10",
+  "Hallowed grapple": "Shop, 100",
+  "Hallowed focus": "Shop, 100",
+  "Hallowed symbol": "Shop, 100",
+  "Hallowed hammer": "Shop, 100",
+  "Hallowed ring": "Shop, 250",
+  "Dark dye": "Shop, 300",
+  "Dark acorn": "Shop, 3,000",
+  "Mysterious page 1": "1/10 per coffin, floor 1",
+  "Mysterious page 2": "1/10 per coffin, floor 2",
+  "Mysterious page 3": "1/10 per coffin, floor 3",
+  "Mysterious page 4": "1/10 per coffin, floor 4",
+  "Mysterious page 5": "Floor 5 (87 Agility)",
+  "Ring of endurance (uncharged)": "Grand coffin, floor 5"
+ }
+};
+  let D = {
+ "source": "Hallowed Sepulchre Coffin",
+ "kind": "activity",
+ "player": "GIM Fasd",
+ "kc": {
+  "value": 5,
+  "lootTracker": 5,
+  "wiseOldMan": null,
+  "dryness": null
+ },
+ "clog": [
+  {
+   "id": 24711,
+   "name": "Hallowed mark",
+   "label": "Hallowed mark",
+   "wiki": "Hallowed_mark",
+   "have": true,
+   "count": 40,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24719,
+   "name": "Hallowed token",
+   "label": "Hallowed token",
+   "wiki": "Hallowed_token",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24721,
+   "name": "Hallowed grapple",
+   "label": "Hallowed grapple",
+   "wiki": "Hallowed_grapple",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24723,
+   "name": "Hallowed focus",
+   "label": "Hallowed focus",
+   "wiki": "Hallowed_focus",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24725,
+   "name": "Hallowed symbol",
+   "label": "Hallowed symbol",
+   "wiki": "Hallowed_symbol",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24727,
+   "name": "Hallowed hammer",
+   "label": "Hallowed hammer",
+   "wiki": "Hallowed_hammer",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24729,
+   "name": "Dark dye",
+   "label": "Dark dye",
+   "wiki": "Dark_dye",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24731,
+   "name": "Hallowed ring",
+   "label": "Hallowed ring",
+   "wiki": "Hallowed_ring",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24733,
+   "name": "Dark acorn",
+   "label": "Dark acorn",
+   "wiki": "Dark_acorn",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24740,
+   "name": "Strange old lockpick (full)",
+   "label": "Strange old lockpick (full)",
+   "wiki": "Strange_old_lockpick_(full)",
+   "have": true,
+   "count": 1,
+   "rate": "1/200",
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24763,
+   "name": "Mysterious page",
+   "label": "Mysterious page 1",
+   "wiki": "Mysterious_page",
+   "have": false,
+   "count": 0,
+   "rate": "1/10",
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24765,
+   "name": "Mysterious page",
+   "label": "Mysterious page 2",
+   "wiki": "Mysterious_page",
+   "have": false,
+   "count": 0,
+   "rate": "1/10",
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24767,
+   "name": "Mysterious page",
+   "label": "Mysterious page 3",
+   "wiki": "Mysterious_page",
+   "have": true,
+   "count": 1,
+   "rate": "1/10",
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24769,
+   "name": "Mysterious page",
+   "label": "Mysterious page 4",
+   "wiki": "Mysterious_page",
+   "have": false,
+   "count": 0,
+   "rate": "1/10",
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24771,
+   "name": "Mysterious page",
+   "label": "Mysterious page 5",
+   "wiki": "Mysterious_page",
+   "have": false,
+   "count": 0,
+   "rate": "1/10",
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  },
+  {
+   "id": 24844,
+   "name": "Ring of endurance (uncharged)",
+   "label": "Ring of endurance (uncharged)",
+   "wiki": "Ring_of_endurance_(uncharged)",
+   "have": false,
+   "count": 0,
+   "rate": null,
+   "dry": null,
+   "lucky": null,
+   "pet": false
+  }
+ ],
+ "clogHave": 3,
+ "cas": [],
+ "casOpen": 0,
+ "casOpenPoints": 0,
+ "drops": [
+  {
+   "item": "Clue scroll (elite)",
+   "wiki": "Clue_scroll_(elite)",
+   "rarity": "1/60",
+   "quantity": "1",
+   "rate": 0.016666666666666666
+  },
+  {
+   "item": "Clue scroll (easy)",
+   "wiki": "Clue_scroll_(easy)",
+   "rarity": "1/50",
+   "quantity": "1",
+   "rate": 0.02
+  },
+  {
+   "item": "Clue scroll (medium)",
+   "wiki": "Clue_scroll_(medium)",
+   "rarity": "1/50",
+   "quantity": "1",
+   "rate": 0.02
+  },
+  {
+   "item": "Clue scroll (hard)",
+   "wiki": "Clue_scroll_(hard)",
+   "rarity": "1/50",
+   "quantity": "1",
+   "rate": 0.02
+  },
+  {
+   "item": "Monk's robe top",
+   "wiki": "Monk's_robe_top",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Monk's robe",
+   "wiki": "Monk's_robe",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Holy symbol",
+   "wiki": "Holy_symbol",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Air rune",
+   "wiki": "Air_rune",
+   "rarity": "1/10",
+   "quantity": "500–750",
+   "rate": 0.1
+  },
+  {
+   "item": "Fire rune",
+   "wiki": "Fire_rune",
+   "rarity": "1/10",
+   "quantity": "500–750",
+   "rate": 0.1
+  },
+  {
+   "item": "Chaos rune",
+   "wiki": "Chaos_rune",
+   "rarity": "1/10",
+   "quantity": "25–50",
+   "rate": 0.1
+  },
+  {
+   "item": "Mithril bolts",
+   "wiki": "Mithril_bolts",
+   "rarity": "1/10",
+   "quantity": "50–150",
+   "rate": 0.1
+  },
+  {
+   "item": "Prayer potion(2)",
+   "wiki": "Prayer_potion(2)",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "White lily",
+   "wiki": "White_lily",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Coins",
+   "wiki": "Coins",
+   "rarity": "1/10",
+   "quantity": "1500–3000",
+   "rate": 0.1
+  },
+  {
+   "item": "Adamant 2h sword",
+   "wiki": "Adamant_2h_sword",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Adamant platebody",
+   "wiki": "Adamant_platebody",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Cosmic rune",
+   "wiki": "Cosmic_rune",
+   "rarity": "1/10",
+   "quantity": "60–100",
+   "rate": 0.1
+  },
+  {
+   "item": "Death rune",
+   "wiki": "Death_rune",
+   "rarity": "1/10",
+   "quantity": "60–100",
+   "rate": 0.1
+  },
+  {
+   "item": "Nature rune",
+   "wiki": "Nature_rune",
+   "rarity": "1/10",
+   "quantity": "60–100",
+   "rate": 0.1
+  },
+  {
+   "item": "Adamant bolts",
+   "wiki": "Adamant_bolts",
+   "rarity": "1/10",
+   "quantity": "50–200",
+   "rate": 0.1
+  },
+  {
+   "item": "Monkfish",
+   "wiki": "Monkfish",
+   "rarity": "1/10",
+   "quantity": "1–3",
+   "rate": 0.1
+  },
+  {
+   "item": "Prayer potion(4)",
+   "wiki": "Prayer_potion(4)",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Grimy ranarr weed",
+   "wiki": "Grimy_ranarr_weed",
+   "rarity": "1/10",
+   "quantity": "1–2",
+   "rate": 0.1
+  },
+  {
+   "item": "Coins",
+   "wiki": "Coins",
+   "rarity": "1/10",
+   "quantity": "7500–12500",
+   "rate": 0.1
+  },
+  {
+   "item": "Rune 2h sword",
+   "wiki": "Rune_2h_sword",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Rune platebody",
+   "wiki": "Rune_platebody",
+   "rarity": "1/10",
+   "quantity": "1",
+   "rate": 0.1
+  },
+  {
+   "item": "Law rune",
+   "wiki": "Law_rune",
+   "rarity": "1/10",
+   "quantity": "150–250",
+   "rate": 0.1
+  },
+  {
+   "item": "Blood rune",
+   "wiki": "Blood_rune",
+   "rarity": "1/10",
+   "quantity": "150–250",
+   "rate": 0.1
+  },
+  {
+   "item": "Soul rune",
+   "wiki": "Soul_rune",
+   "rarity": "1/10",
+   "quantity": "150–250",
+   "rate": 0.1
+  },
+  {
+   "item": "Runite bolts",
+   "wiki": "Runite_bolts",
+   "rarity": "1/10",
+   "quantity": "100–300",
+   "rate": 0.1
+  },
+  {
+   "item": "Monkfish",
+   "wiki": "Monkfish",
+   "rarity": "1/10",
+   "quantity": "2–6",
+   "rate": 0.1
+  },
+  {
+   "item": "Sanfew serum(4)",
+   "wiki": "Sanfew_serum(4)",
+   "rarity": "1/10",
+   "quantity": "1–2",
+   "rate": 0.1
+  },
+  {
+   "item": "Ranarr seed",
+   "wiki": "Ranarr_seed",
+   "rarity": "1/10",
+   "quantity": "1–2",
+   "rate": 0.1
+  },
+  {
+   "item": "Coins",
+   "wiki": "Coins",
+   "rarity": "1/10",
+   "quantity": "17500–25000",
+   "rate": 0.1
+  }
+ ],
+ "owned": {
+  "Drakan's medallion": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "inventory"
+   ],
+   "known": true
+  },
+  "Agility potion(4)": {
+   "have": false,
+   "count": 0,
+   "where": [],
+   "known": true
+  },
+  "Summer pie": {
+   "have": false,
+   "count": 0,
+   "where": [],
+   "known": true
+  },
+  "Mith grapple": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "worn"
+   ],
+   "known": true
+  },
+  "Vampyre dust": {
+   "have": true,
+   "count": 41,
+   "where": [
+    "bank",
+    "inventory"
+   ],
+   "known": true
+  },
+  "Graceful hood": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "worn"
+   ],
+   "known": true
+  },
+  "Holy symbol": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "worn"
+   ],
+   "known": true
+  },
+  "Holy book": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "worn"
+   ],
+   "known": true
+  },
+  "Crystal saw": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "bank"
+   ],
+   "known": true
+  },
+  "Plank sack": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "inventory"
+   ],
+   "known": true
+  },
+  "Mithril nails": {
+   "have": true,
+   "count": 161,
+   "where": [
+    "inventory"
+   ],
+   "known": true
+  },
+  "Lockpick": {
+   "have": true,
+   "count": 78,
+   "where": [
+    "bank",
+    "inventory"
+   ],
+   "known": true
+  },
+  "Stamina potion(4)": {
+   "have": true,
+   "count": 162,
+   "where": [
+    "potion storage"
+   ],
+   "known": true
+  }
+ },
+ "missing": [],
+ "levels": {
+  "Attack": 94,
+  "Defence": 92,
+  "Strength": 99,
+  "Hitpoints": 99,
+  "Ranged": 91,
+  "Prayer": 79,
+  "Magic": 94,
+  "Cooking": 89,
+  "Woodcutting": 80,
+  "Fletching": 82,
+  "Fishing": 81,
+  "Firemaking": 83,
+  "Crafting": 83,
+  "Smithing": 85,
+  "Mining": 94,
+  "Herblore": 82,
+  "Agility": 76,
+  "Thieving": 76,
+  "Slayer": 86,
+  "Farming": 89,
+  "Runecraft": 73,
+  "Hunter": 79,
+  "Construction": 84,
+  "Sailing": 71
+ },
+ "gear": null,
+ "gearRequest": null,
+ "files": {
+  "progress": "2026-11-22T13:11:34.139732300Z",
+  "clog": "2026-11-22T13:10:37.140954800Z",
+  "killcounts": "2026-11-22T13:10:39.547118500Z",
+  "containers": "2026-11-22T13:12:11.341685100Z"
+ },
+ "stale": [],
+ "wiseOldMan": {
+  "updatedAt": "2026-11-22T10:08:28.697Z",
+  "stale": false
+ },
+ "warnings": [],
+ "timings": {
+  "wiki": 0.01,
+  "wiseOldMan": 0,
+  "dryness": 0.37,
+  "total": 0.41
+ },
+ "at": "2026-11-22T13:14:12.498Z"
+};
+  const WIKI = 'https://oldschool.runescape.wiki/w/';
+  const LIVE_URL = `http://localhost:3124/guides/${SLUG}`;
+  const live = ['localhost', '127.0.0.1'].includes(location.hostname);
+  let busy = false;
+  let status = { text: '', err: false };
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const page = (p) => WIKI + encodeURIComponent(String(p).replace(/ /g, '_')).replace(/%2F/g, '/').replace(/%23/g, '#');
+  const clean = (s) => String(s || '').replace(/\s*\[[^\]]*\]/g, '').trim();
+  const fmtTime = (iso) => { try { return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+  const base = (s) => String(s || '').toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const unesc = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  // mini markup in the guide's text: [[Page]], [[Page|text]], **bold**, {have:Item}
+  const md = (t) => esc(t)
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, (_, p, l) => `<a href="${esc(page(unesc(p)))}">${l}</a>`)
+    .replace(/\[\[([^\]]+)\]\]/g, (_, p) => `<a href="${esc(page(unesc(p)))}">${p}</a>`)
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/\{have:([^}]+)\}/g, (_, n) => {
+      const o = D?.owned?.[unesc(n).trim()];
+      if (!o) return '';
+      return o.have ? '<span class="pill have">you have it</span>' : '<span class="pill miss">not owned</span>';
+    });
+
+  const SLOTS = ['head', 'cape', 'neck', 'ammo', 'weapon', 'shield', 'body', 'legs', 'hands', 'feet', 'ring'];
+  const STYLE_NAMES = { melee: 'Melee', ranged: 'Ranged', magic: 'Magic' };
+  const KIND = { boss: 'Boss guide', slayer: 'Slayer task', activity: 'Activity guide' };
+  const TIER_ORDER = ['Easy', 'Medium', 'Hard', 'Elite', 'Master', 'Grandmaster'];
+
+  const panel = (id, title, note, body) => `<section aria-labelledby="${id}-h">
+      <div class="sh"><h2 id="${id}-h">${esc(title)}</h2>${note ? `<span class="note">${note}</span>` : ''}</div>${body}</section>`;
+  const facts = (rows) => (rows && rows.length ? `<dl class="facts">${rows.map(([l, t]) => `<dt>${esc(l)}</dt><dd>${md(t)}</dd>`).join('')}</dl>` : '');
+  const table = (head, rows, right = []) => `<div class="tbl-wrap"><table>
+      <thead><tr>${head.map((h, i) => `<th${right.includes(i) ? ' class="r"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${right.includes(i) ? ' class="r"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+
+  // a free section from the guide: bullets (items), label/value rows (facts) or a table (head + rows)
+  const section = (s, i) => {
+    let body = '';
+    if (s.items) body += `<ul class="list">${s.items.map((t) => `<li>${md(t)}</li>`).join('')}</ul>`;
+    if (s.facts) body += facts(s.facts);
+    if (s.rows) body += table(s.head || [], s.rows.map((r) => r.map(md)), s.right || []);
+    return panel(`s${i}`, s.title, s.note ? md(s.note) : '', body);
+  };
+
+  const gearPanel = () => {
+    const g = D?.gear;
+    const res = g?.results || {};
+    const best = g?.best;
+    let body = '';
+    if (best && res[best]) {
+      const cards = ['melee', 'ranged', 'magic'].filter((k) => res[k]).map((k) => {
+        const r = res[k];
+        const weapon = r.spell ? `${r.spell}, ${clean(r.equipment.weapon)}` : clean(r.equipment.weapon);
+        return `<div class="style${k === best ? ' best' : ''}">
+          <span class="label">${STYLE_NAMES[k]}${k === best ? ' · best' : ''}</span>
+          <span class="dps num">${r.dps.toFixed(2)}</span>
+          <span class="meta num">${esc(weapon)} · ${r.secondsPerKill}s</span>
+          <a href="${esc(r.calcUrl)}">Open in DPS calc</a></div>`;
+      }).join('');
+      const b = res[best];
+      const stance = /^(.*?) \(([^,]+), ([^)]+)\)$/.exec(b.style || '');
+      const slots = SLOTS.filter((s) => b.equipment[s]).map((s) => {
+        let v = clean(b.equipment[s]);
+        if (s === 'weapon') v += b.spell ? ` (${b.spell})` : (stance ? ` (${stance[1]}, ${stance[3].toLowerCase()})` : '');
+        return `<div class="slot"><span>${s}</span><span>${esc(v)}</span></div>`;
+      }).join('');
+      body += `<div class="styles">${cards}</div><div><h3 style="margin-bottom:8px">${STYLE_NAMES[best]} setup</h3><div class="slots">${slots}</div></div>`;
+    } else if (G.kind !== 'activity') {
+      body += `<p class="note">${live ? 'No gear yet. Press Rerun gear.' : 'No gear in this snapshot.'}</p>`;
+    }
+    body += facts(G.facts);
+    const note = G.gearNote ? md(G.gearNote) : (g ? esc([...(g.prayers || []), ...(g.potions || [])].join(' · ') || 'No prayers or potions') : '');
+    return panel('gear', G.kind === 'activity' ? (G.factsTitle || 'Overview') : 'Gear and inventory', note, body);
+  };
+
+  const mechPanel = () => {
+    const m = G.mechanics;
+    if (!m || !m.items || !m.items.length) return '';
+    const body = `<div class="mech">${m.items.map((x) => `<div class="mech-item">${x.cue ? `<span class="cue">${esc(x.cue)}</span>` : '<span></span>'}<p>${x.title ? `<b>${md(x.title)}</b> ` : ''}${md(x.text)}</p></div>`).join('')}</div>`;
+    return panel('mech', 'Mechanics', m.note ? md(m.note) : '', body);
+  };
+
+  const caPanel = () => {
+    const cas = D?.cas || [];
+    if (!cas.length) return '';
+    const open = cas.filter((c) => !c.done).sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
+    const how = G.caHow || {};
+    const body = open.length ? `<div class="ca">${open.map((c) => `<div class="ca-item">
+        <div class="t"><span class="pill tier">${esc(c.tier)}</span><a href="${esc(page(c.name))}">${esc(c.name)}</a></div>
+        <p>${esc(c.task)}</p>${how[c.id] ? `<p class="how">${md(how[c.id])}</p>` : ''}</div>`).join('')}</div>`
+      : `<p class="done-all">All ${esc(G.title)} Combat Achievements done.</p>`;
+    return panel('ca', 'Combat Achievements', open.length ? `${open.length} left · ${D.casOpenPoints} pts` : '', body);
+  };
+
+  const triviaPanel = () => {
+    const drops = D?.drops || [];
+    const notable = (G.notableDrops || []).map((n) => {
+      if (Array.isArray(n)) return [md(n[0]), esc(n[1])];
+      const byRate = (a, b) => (b.rate ?? 0) - (a.rate ?? 0);
+      const exact = drops.filter((x) => x.item.toLowerCase() === n.toLowerCase()).sort(byRate);
+      const d = exact[0] || drops.filter((x) => base(x.item) === base(n)).sort(byRate)[0];
+      const c = (D?.clog || []).find((x) => x.name.toLowerCase() === n.toLowerCase());
+      return [`<a href="${esc(page(n))}">${esc(n)}</a>`, esc(d ? d.rarity : (c?.rate || '?'))];
+    });
+    const clog = D?.clog || [];
+    const have = clog.filter((c) => c.have).length;
+    const rows = clog.map((c) => [
+      `<a href="${esc(page(c.name))}">${esc(c.label || c.name)}</a>${c.pet ? ' (pet)' : ''}`,
+      `<span class="pill ${c.have ? 'have' : 'miss'}">${c.have ? 'Have' : 'Missing'}</span>`,
+      // clogNotes in the guide replace the wiki rate (shop prices, floor locks)
+      esc(G.clogNotes?.[c.label || c.name] || c.rate || '–'),
+      c.have ? '–' : (c.dry == null ? (G.clogNotes?.[c.label || c.name] ? '–' : '<span class="note">not in dryness.py</span>')
+        : `${c.dry.toFixed(1)}%<span class="bar" aria-hidden="true"><i style="width:${c.dry}%"></i></span>`),
+    ]);
+    if (!notable.length && !clog.length) return '';
+    const left = notable.length ? `<div><h3 style="margin-bottom:8px">Notable drops</h3>${table(['Drop', 'Rate'], notable, [1])}</div>` : '';
+    const right = clog.length ? `<div><h3 style="margin-bottom:8px">Collection log · ${have} of ${clog.length}</h3>
+        ${table(['Item', 'Status', 'Rate', 'Chance this dry'], rows, [2, 3])}
+        <p class="note" style="margin-top:6px">A high % means being this dry is normal at your kc.</p></div>` : '';
+    return panel('triv', 'Trivia', D?.kc?.value != null ? `${D.kc.value} ${esc(G.kcLabel || 'kc')}` : '',
+      `<div class="trivia"${left && right ? '' : ' style="grid-template-columns:minmax(0,1fr)"'}>${left}${right}</div>`);
+  };
+
+  const render = () => {
+    const sec = (col) => (G.sections || []).map((s, i) => ((s.column || 'left') === col ? section(s, i) : '')).join('');
+    const stats = (G.stats || []).map(([l, v]) => `<div class="stat"><span class="label">${esc(l)}</span><b class="num">${esc(v)}</b></div>`).join('');
+    const kc = D?.kc?.value;
+    const missing = (D?.missing || []).map((m) => (m.type === 'quest' ? `<a href="${esc(page(m.name))}">${esc(m.name)}</a>` : `${esc(m.need)} ${esc(m.name)} (you have ${esc(m.have)})`));
+    const stale = D?.stale?.length ? ` <span style="color:var(--bad)">· ${esc(D.stale.join(', '))} over a day old, press Export</span>` : '';
+    const womStale = D?.wiseOldMan?.stale ? ' · <a href="https://wiseoldman.net/players/gim%20fasd">Wise Old Man</a> is a few days old, update it' : '';
+    const right = `${mechPanel()}${caPanel()}${sec('right')}`;
+    const button = D?.gearRequest || G.data?.monster ? 'Rerun gear' : 'Refresh';
+
+    document.getElementById('app').innerHTML = `
+  <div class="top">
+    <div>
+      <div class="label">${esc(G.kicker || KIND[G.kind] || KIND.boss)}${D?.player ? ` · ${esc(D.player)}` : ''}</div>
+      <h1><a href="${esc(page(G.wiki || G.title))}" style="color:inherit;text-decoration:none">${esc(G.title)}</a></h1>
+      <div class="sub">${md(G.subtitle || '')}${kc != null ? `${G.subtitle ? ' · ' : ''}<span class="num">${kc}</span> ${esc(G.kcLabel || 'kc')}` : ''}</div>
+    </div>
+    <div class="right">
+      ${stats ? `<div class="stats" aria-label="Stats">${stats}</div>` : ''}
+      <div class="refresh">
+        <span class="status${status.err ? ' err' : ''}" role="status">${esc(status.text || (D ? `Saved ${fmtTime(D.at)}` : 'No data yet'))}</span>
+        ${live ? `<button id="refreshBtn" type="button" ${busy ? 'disabled' : ''}>${busy ? 'Refreshing…' : button}</button>` : `<a href="${LIVE_URL}">Open live page</a>`}
+      </div>
+    </div>
+  </div>
+  ${missing.length ? `<div class="alert"><b>Missing:</b> ${missing.join(', ')}</div>` : ''}
+  <div class="board"${right ? '' : ' style="grid-template-columns:minmax(0,1fr)"'}>
+    <div class="col">${gearPanel()}${sec('left')}</div>
+    ${right ? `<div class="col">${right}</div>` : ''}
+  </div>
+  ${sec('full')}
+  ${triviaPanel()}
+  <footer>Data from your sync files${D?.files ? ` (kills ${esc(fmtTime(D.files.killcounts))}, collection log ${esc(fmtTime(D.files.clog))})` : ''}${stale}${womStale}. Rates, tasks and mechanics from the OSRS Wiki.</footer>`;
+    const btn = document.getElementById('refreshBtn');
+    if (btn) btn.addEventListener('click', () => refresh(true));
+  };
+
+  const refresh = async (full, auto = false) => {
+    if (!live || busy) return;
+    busy = true;
+    const before = JSON.stringify({ ...D, at: null, timings: null });
+    if (!auto) { status = { text: full ? 'Reading sync files and running the optimizer…' : 'Updating…', err: false }; render(); }
+    try {
+      const r = await fetch(`/guide-data?guide=${SLUG}${full ? '' : '&gear=0'}`, { cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      D = j;
+      busy = false;
+      status = j.warnings?.length ? { text: `Updated with warnings: ${j.warnings.join('; ')}`, err: true } : { text: `Live · updated ${fmtTime(j.at)}`, err: false };
+      // auto refreshes that changed nothing only touch the status line, so scrolling and selection aren't disturbed
+      const el = document.querySelector('.refresh .status');
+      if (auto && el && JSON.stringify({ ...D, at: null, timings: null }) === before) {
+        el.textContent = status.text;
+        el.classList.toggle('err', status.err);
+        return;
+      }
+      render();
+    } catch (e) {
+      busy = false;
+      status = { text: `Refresh failed: ${e?.message || e}`, err: true };
+      render();
+    }
+  };
+
+  render();
+  if (live) {
+    // kc, collection log, dryness and CAs every 30s while the tab is visible; gear only from the button
+    const tick = () => { if (!document.hidden) refresh(false, true); };
+    tick();
+    setInterval(tick, 30 * 1000);
+    document.addEventListener('visibilitychange', tick);
+  }
+})();
+</script>

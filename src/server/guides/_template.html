@@ -219,10 +219,11 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
     const clog = D?.clog || [];
     const have = clog.filter((c) => c.have).length;
     const rows = clog.map((c) => [
-      `<a href="${esc(page(c.name))}">${esc(c.name)}</a>${c.pet ? ' (pet)' : ''}`,
+      `<a href="${esc(page(c.name))}">${esc(c.label || c.name)}</a>${c.pet ? ' (pet)' : ''}`,
       `<span class="pill ${c.have ? 'have' : 'miss'}">${c.have ? 'Have' : 'Missing'}</span>`,
-      esc(c.rate || '–'),
-      c.have ? '–' : (c.dry == null ? '<span class="note">not in dryness.py</span>'
+      // clogNotes in the guide replace the wiki rate (shop prices, floor locks)
+      esc(G.clogNotes?.[c.label || c.name] || c.rate || '–'),
+      c.have ? '–' : (c.dry == null ? (G.clogNotes?.[c.label || c.name] ? '–' : '<span class="note">not in dryness.py</span>')
         : `${c.dry.toFixed(1)}%<span class="bar" aria-hidden="true"><i style="width:${c.dry}%"></i></span>`),
     ]);
     if (!notable.length && !clog.length) return '';

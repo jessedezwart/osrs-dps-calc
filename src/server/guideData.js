@@ -252,12 +252,21 @@ const guideData = async (input, { optimize } = {}) => {
   // collection log
   const tabs = new Set(p.clogTabs.map(lc));
   const newByName = new Set(Object.keys(clogFile.newByName || {}).map(lc));
-  const clog = (clogR.v || []).filter((c) => c.tabs.some((t) => tabs.has(lc(t)))).map((c) => {
-    const count = Math.max(clogFile.items?.[c.id] || 0, trackerSrc?.drops?.[c.id] || 0, newByName.has(lc(c.name)) ? 1 : 0);
+  const slots = (clogR.v || []).filter((c) => c.tabs.some((t) => tabs.has(lc(t))));
+  // newByName only has names, so it can't tell apart slots that share one (the five Mysterious pages)
+  const nameCount = slots.reduce((m, c) => m.set(lc(c.name), (m.get(lc(c.name)) || 0) + 1), new Map());
+  const seenName = new Map();
+  const clog = slots.map((c) => {
+    const n = (seenName.get(lc(c.name)) || 0) + 1;
+    seenName.set(lc(c.name), n);
+    const byName = nameCount.get(lc(c.name)) === 1 && newByName.has(lc(c.name)) ? 1 : 0;
+    const count = Math.max(clogFile.items?.[c.id] || 0, trackerSrc?.drops?.[c.id] || 0, byName);
     const d = dryItems.find((i) => base(i.name) === base(c.name));
     return {
       id: c.id,
       name: c.name,
+      // "Mysterious page 3" when several slots share a name
+      label: nameCount.get(lc(c.name)) > 1 ? `${c.name} ${n}` : c.name,
       wiki: wikiPage(c.name),
       have: count > 0,
       count,

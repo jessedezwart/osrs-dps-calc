@@ -1,0 +1,177 @@
+{
+ "kind": "activity",
+ "title": "Hallowed Sepulchre",
+ "kicker": "Minigame guide",
+ "subtitle": "Darkmeyer · timed Agility floors with coffins to loot",
+ "kcLabel": "coffins looted",
+ "stats": [
+  [
+   "Agility",
+   "76"
+  ],
+  [
+   "Floors open",
+   "1–3"
+  ],
+  [
+   "To floor 4",
+   "83k xp"
+  ],
+  [
+   "Marks",
+   "40"
+  ]
+ ],
+ "data": {
+  "source": "Hallowed Sepulchre Coffin",
+  "clog": [
+   "Hallowed Sepulchre"
+  ],
+  "dryness": "sepulchre",
+  "dropPage": "Coffin (Hallowed Sepulchre)",
+  "caMonster": false,
+  "quests": [
+   "Sins of the Father"
+  ],
+  "levels": {
+   "Agility": 52
+  }
+ },
+ "factsTitle": "Setup",
+ "gearNote": "Coffin skill requirements all met",
+ "facts": [
+  [
+   "Transportation",
+   "[[Drakan's medallion]] to Darkmeyer {have:Drakan's medallion}, or [[Hallowed crystal shard]]s (1 mark each) once marks are spare."
+  ],
+  [
+   "Requirements",
+   "Floor 4 needs 77 Agility and the entry check is boostable: an [[Agility potion]] (+3) {have:Agility potion(4)} or a bite of [[Summer pie]] (+5) {have:Summer pie} at the end of floor 3. Floor 5 (87) and the [[Grand Hallowed Coffin]] are out of reach."
+  ],
+  [
+   "Required items",
+   "Crossbow + [[Mith grapple]], hammer, saw, planks + nails, [[Vampyre dust]], cosmic runes {have:Mith grapple}"
+  ],
+  [
+   "Gear",
+   "Graceful, [[Holy symbol]] and [[Holy book]] (Saradomin items, so the obelisk at each floor's end refills your run; other god items drain it)."
+  ],
+  [
+   "Inventory",
+   "[[Crystal saw]] + hammer, [[Plank sack]] of oak planks + mithril nails, [[Lockpick]] (better coffin success), rune pouch with cosmic + earth + fire, [[Stamina potion]]s, a little food until the hallowed ring. All owned."
+  ],
+  [
+   "XP/hr and AFK",
+   "~63k looting / ~72k not looting up to floor 3; ~73k / ~81k up to floor 4. Low AFK."
+  ]
+ ],
+ "sections": [
+  {
+   "title": "How it works",
+   "column": "right",
+   "items": [
+    "Run each floor's trap path on a timer: 2 minutes for floor 1, plus 2 more per floor. Leftover time carries over.",
+    "Clear a coffin's obstacle (bridge, brazier, portal, grapple pillar), then loot it for [[Hallowed mark]]s and loot. A failed loot poisons you.",
+    "Traps knock you back; time, not HP, is the real cost.",
+    "Leave with the obelisk at any floor's end. That's also the only roll for the [[Giant squirrel]]."
+   ]
+  },
+  {
+   "title": "Strategy",
+   "column": "right",
+   "note": "Solo",
+   "items": [
+    "**Now:** floors 1–3 every run. Don't loot floors 1–2. On floor 3 loot the bridge and portal coffins, skip grapple and brazier.",
+    "**Early on:** loot more coffins to build marks for the ring and grapple, and to roll the Mysterious pages (one per floor).",
+    "**Floor 4:** about 1¼ hours of floor 3 runs gets you 77 (or boost now). Then floors 1–4, looting everything on floor 4 except the brazier coffin.",
+    "Buy a private instance (200 marks) so other players don't throw off the trap timings."
+   ]
+  },
+  {
+   "title": "Rewards worth it",
+   "column": "full",
+   "note": "You have 40 marks",
+   "head": [
+    "#",
+    "Reward",
+    "Marks",
+    "Why"
+   ],
+   "right": [
+    2
+   ],
+   "rows": [
+    [
+     "1",
+     "[[Hallowed grapple]]",
+     "100",
+     "Pillars never fail. Buy the ring first if you keep hitting traps."
+    ],
+    [
+     "2",
+     "[[Hallowed ring]]",
+     "250",
+     "No trap damage and less time lost, so no food."
+    ],
+    [
+     "3",
+     "Private instance",
+     "200",
+     "Steady trap timings. From the Mysterious Stranger."
+    ],
+    [
+     "4",
+     "[[Hallowed focus]], [[Hallowed symbol|symbol]], [[Hallowed hammer|hammer]]",
+     "100 each",
+     "Portals and bridges never fail, half the vampyre dust. Each is a clog slot."
+    ],
+    [
+     "5",
+     "[[Hallowed token]]",
+     "10",
+     "+1 minute. Buy one for the clog slot."
+    ],
+    [
+     "6",
+     "[[Dark dye]] ×6, [[Dark acorn]]",
+     "300 / 3,000",
+     "Cosmetic, clog only. The acorn needs the Giant squirrel."
+    ]
+   ]
+  }
+ ],
+ "notableDrops": [
+  [
+   "Coins, 7.5k–25k",
+   "mid / high table"
+  ],
+  [
+   "Blood, soul, law runes (150–250)",
+   "high table"
+  ],
+  [
+   "Sanfew serum(4), ranarr seeds",
+   "high table"
+  ],
+  [
+   "Medium clue (floor 3), hard clue (floor 4)",
+   "1/25, 1/50"
+  ]
+ ],
+ "clogNotes": {
+  "Hallowed token": "Shop, 10",
+  "Hallowed grapple": "Shop, 100",
+  "Hallowed focus": "Shop, 100",
+  "Hallowed symbol": "Shop, 100",
+  "Hallowed hammer": "Shop, 100",
+  "Hallowed ring": "Shop, 250",
+  "Dark dye": "Shop, 300",
+  "Dark acorn": "Shop, 3,000",
+  "Mysterious page 1": "1/10 per coffin, floor 1",
+  "Mysterious page 2": "1/10 per coffin, floor 2",
+  "Mysterious page 3": "1/10 per coffin, floor 3",
+  "Mysterious page 4": "1/10 per coffin, floor 4",
+  "Mysterious page 5": "Floor 5 (87 Agility)",
+  "Ring of endurance (uncharged)": "Grand coffin, floor 5"
+ }
+}
