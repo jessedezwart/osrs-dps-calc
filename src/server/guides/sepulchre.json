@@ -103,36 +103,42 @@
    "rows": [
     [
      "1",
-     "[[Hallowed grapple]]",
+     "[[Hallowed focus]]",
      "100",
-     "Pillars never fail. Buy the ring first if you keep hitting traps."
+     "Portal coffins (you loot them on floor 3) never fail."
     ],
     [
      "2",
-     "[[Hallowed ring]]",
-     "250",
-     "No trap damage and less time lost, so no food."
+     "[[Hallowed hammer]]",
+     "100",
+     "Nails never break on bridge coffins (also looted on floor 3)."
     ],
     [
      "3",
-     "Private instance",
-     "200",
-     "Steady trap timings. From the Mysterious Stranger."
+     "[[Hallowed ring]]",
+     "250",
+     "No trap damage and faster recovery, so no food."
     ],
     [
      "4",
-     "[[Hallowed focus]], [[Hallowed symbol|symbol]], [[Hallowed hammer|hammer]]",
-     "100 each",
-     "Portals and bridges never fail, half the vampyre dust. Each is a clog slot."
+     "[[Hallowed grapple]]",
+     "100",
+     "Grapple shortcuts never fail. Matters once you loot grapple coffins on floor 4."
     ],
     [
      "5",
      "[[Hallowed token]]",
      "10",
-     "+1 minute. Buy one for the clog slot."
+     "+1 minute on the timer, and a clog slot."
     ],
     [
      "6",
+     "[[Hallowed symbol]]",
+     "100",
+     "Brazier coffins use 1 vampyre dust; you skip those, so clog only."
+    ],
+    [
+     "7",
      "[[Dark dye]] ×6, [[Dark acorn]]",
      "300 / 3,000",
      "Cosmetic, clog only. The acorn needs the Giant squirrel."
