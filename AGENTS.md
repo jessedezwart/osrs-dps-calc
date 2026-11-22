@@ -10,7 +10,7 @@ Merge conflicts only come from lines we change in files upstream also edits. So:
 
 - **Put fork features in their own files.** Upstream never touches them, so they always merge cleanly. For example,
   `src/lib/optimizer/` (the search, see its `index.ts`), `src/lib/ItemPrices.ts`, `src/lib/BankImport.ts`,
-  `src/worker/OptimizerPool.ts`, and `src/app/components/results/GearOptimizer.tsx` with its parts in
+  `src/worker/OptimizerPool.ts`, `src/server/` (the local optimizer HTTP server, see its `README.md`), and `src/app/components/results/GearOptimizer.tsx` with its parts in
   `src/app/components/results/optimizer/`.
 - **Don't add state to `src/state.tsx`.** The optimizer's state lives in `src/optimizerState.ts` (`useOptimizer()`),
   which uses the global store but isn't part of it. Add new fork state there, or in a similar store of its own.
