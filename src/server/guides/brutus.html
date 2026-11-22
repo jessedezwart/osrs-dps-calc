@@ -462,11 +462,16 @@ footer{font-size:12px;color:var(--muted)}
     return `${SKELETON}\n${title}\n${meta}\n${font}\n${style}\n\n<div class="wrap" id="app"></div>\n\n<script type="application/json" id="state">\n${state}\n<\/script>\n\n<script id="main">${main}<\/script>\n</body></html>`;
   };
 
-  const refresh = async (full) => {
+  const snapshot = () => JSON.stringify({ ...S, savedAt: null });
+
+  const refresh = async (full, auto = false) => {
     if (!live || busy) return;
     busy = true;
-    status = { text: full ? 'Reading sync files and running the optimizer (about 30s)…' : 'Updating kc and dryness…', err: false };
-    render();
+    const before = snapshot();
+    if (!auto || full) {
+      status = { text: full ? 'Reading sync files and running the optimizer (about 30s)…' : 'Updating kc and dryness…', err: false };
+      render();
+    }
     const errors = [];
     try {
       const ids = S.clog.map((c) => c.id);
@@ -491,12 +496,21 @@ footer{font-size:12px;color:var(--muted)}
             const r = o.results?.[k]?.[0];
             if (r) S.gear[k] = { dps: r.dps, secondsPerKill: r.secondsPerKill, style: r.style, spell: r.spell, calcUrl: r.calcUrl, equipment: r.equipment };
           }
+          S.gearAt = new Date().toISOString();
         } catch (e) { errors.push(`optimizer: ${e?.message || e?.code}`); }
       }
       S.savedAt = new Date().toISOString();
+      const prefix = isLocal ? 'Live · ' : '';
       if (errors.length) status = { text: `Partly updated. ${errors.join('; ')}`, err: true };
-      else status = { text: `Updated ${fmtTime(S.savedAt)}`, err: false };
+      else status = { text: `${prefix}updated ${fmtTime(S.savedAt)}`, err: false };
       busy = false;
+      // auto refreshes that changed nothing only touch the status line, so scrolling and selection aren't disturbed
+      const statusEl = document.querySelector('.refresh .status');
+      if (auto && !full && !errors.length && snapshot() === before && statusEl) {
+        statusEl.textContent = status.text;
+        statusEl.classList.remove('err');
+        return;
+      }
       render();
       if (full && !isLocal) {
         try {
@@ -513,9 +527,17 @@ footer{font-size:12px;color:var(--muted)}
     }
   };
 
+  // the live page refreshes itself: kc, clog, dryness and CAs every 30s, gear every 30 min (only while the tab is visible)
+  const STATUS_EVERY = 30 * 1000;
+  const GEAR_EVERY = 30 * 60 * 1000;
+  const gearDue = () => !S.gearAt || Date.now() - Date.parse(S.gearAt) > GEAR_EVERY;
+  const tick = () => { if (live && !document.hidden) refresh(gearDue(), true); };
+
   render();
   if (isLocal) {
-    refresh(false);
+    tick();
+    setInterval(tick, STATUS_EVERY);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
   } else {
     (async () => {
       try { mcp = await window.claude?.use('mcp'); } catch { mcp = null; }
