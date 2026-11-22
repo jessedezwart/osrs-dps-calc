@@ -8,7 +8,10 @@ monster. It reads your levels and items from the OSRS Data Sync RuneLite plugin'
 node src/server/start.js
 ```
 
-Env: `PORT` (default 3124), `OSRS_SYNC_DIR` (default `~/.runelite/plugin-data/osrsdatasync`), `OSRS_PLAYER` (only
+It also serves the calculator at http://localhost:3124/osrs-dps/ from the static build in `out/`, so run `npx next build`
+once (and again after updating the code) for the `calcUrl` links below to work.
+
+Env: `CALC_URL` (where `calcUrl` links point, default this server's `/osrs-dps/`), `PORT` (default 3124), `OSRS_SYNC_DIR` (default `~/.runelite/plugin-data/osrsdatasync`), `OSRS_PLAYER` (only
 needed when the sync folder has more than one account). It listens on 127.0.0.1 only.
 
 ## Endpoints
@@ -51,5 +54,7 @@ needed when the sync folder has more than one account). It listens on 127.0.0.1 
 
 The response has the monster used (and its other versions), the levels, boosts and prayers used, and per style the top
 setups with `dps`, `secondsPerKill`, `maxHit`, `accuracy` (%), `style`, `spell`, `equipment` per slot, `weight`, the
-damage the monster deals (`npcDps`, `avgDmgTakenPerKill`) and equal-DPS alternatives. A full search over a large bank
+damage the monster deals (`npcDps`, `avgDmgTakenPerKill`), equal-DPS alternatives, and `calcUrl`: a link that opens the
+calculator with the monster selected and the setup (gear, style, spell, prayers, levels, potions and buffs) in a new
+loadout, next to your saved ones. A full search over a large bank
 takes about 5 to 20 seconds, with a thread per style.

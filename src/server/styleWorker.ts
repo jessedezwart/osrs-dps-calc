@@ -21,7 +21,7 @@ parentPort!.on('message', ({
     const result = optimizeGear(p.owned, p.player, p.monster, p.opts);
     parentPort!.postMessage({
       id,
-      loadouts: result[style].map((l) => describeLoadout(l, p.monster.skills.hp)),
+      loadouts: result[style].map((l) => describeLoadout(l, p, req)),
       evaluations: result.evaluations,
     });
   } catch (e) {

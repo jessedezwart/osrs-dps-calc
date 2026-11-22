@@ -308,7 +308,11 @@ export class OptimizerState {
    * @param asNewLoadout whether to create a new loadout for it (if possible), rather than overwriting the current one
    * @param base the levels, boosts and buffs the optimizer searched with
    */
-  applyLoadout(result: OptimizedLoadout, asNewLoadout: boolean, base: Pick<Player, 'skills' | 'boosts' | 'buffs'>) {
+  applyLoadout(
+    result: Pick<OptimizedLoadout, 'equipment' | 'style' | 'spell' | 'prayers'>,
+    asNewLoadout: boolean,
+    base: Pick<Player, 'skills' | 'boosts' | 'buffs'>,
+  ) {
     const { loadouts } = this.root;
     if (asNewLoadout && loadouts.canCreate) {
       loadouts.create({ select: true, cloneFrom: loadouts.selectedUuid });

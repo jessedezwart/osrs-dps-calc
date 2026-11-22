@@ -18,7 +18,11 @@ import { resolveEquipment, resolveOwnedEquipment } from '@/lib/BankImport';
 import {
   OPTIMIZER_STYLES, OptimizedLoadout, OptimizerOpts, OptimizerStyle, TrainingSkill,
 } from '@/lib/optimizer';
+import { createSetupLink, setupLinkUrl } from '@/lib/SetupLink';
 import { AccountData } from './accountData';
+
+/** Where the calculator is served, for the `calcUrl` links (by default this server, see optimizerServer.ts). */
+export const CALC_URL = process.env.CALC_URL || `http://localhost:${process.env.PORT || 3124}/osrs-dps/`;
 
 export interface OptimizeRequest {
   /** The monster's name (case-insensitive), or its ID. */
@@ -259,10 +263,10 @@ const itemLabel = (i: EquipmentPiece) => {
   return `${i.name}${i.version ? ` [${i.version}]` : ''}${dart}`;
 };
 
-export const describeLoadout = (l: OptimizedLoadout, monsterHp: number) => ({
+export const describeLoadout = (l: OptimizedLoadout, prepared: PreparedRequest, req: OptimizeRequest) => ({
   dps: Number(l.dps.toFixed(3)),
   /** Seconds per kill, ignoring overkill and time between kills. */
-  secondsPerKill: l.dps > 0 ? Number((monsterHp / l.dps).toFixed(1)) : null,
+  secondsPerKill: l.dps > 0 ? Number((prepared.monster.skills.hp / l.dps).toFixed(1)) : null,
   maxHit: l.maxHit,
   accuracy: Number((l.accuracy * 100).toFixed(1)),
   style: `${l.style.name} (${l.style.type}, ${l.style.stance})`,
@@ -275,4 +279,14 @@ export const describeLoadout = (l: OptimizedLoadout, monsterHp: number) => ({
     .filter(([, i]) => i)
     .map(([slot, i]) => [slot, itemLabel(i as EquipmentPiece)])),
   equalDpsAlternatives: l.alternatives.map((a) => `${a.slot}: ${itemLabel(a.item)}`),
+  /** Opens the calculator with this setup in a new loadout. */
+  calcUrl: setupLinkUrl(CALC_URL, createSetupLink({
+    monsterId: prepared.monster.id,
+    monsterInputs: req.monsterInputs,
+    equipment: l.equipment,
+    style: l.style,
+    spell: l.spell,
+    prayers: l.prayers,
+    player: prepared.player,
+  })),
 });

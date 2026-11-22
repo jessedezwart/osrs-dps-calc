@@ -5,9 +5,11 @@
  *   GET  /health             - status, and the synced account it found
  *   GET  /monsters?name=...  - monsters whose name contains the text (with their versions)
  *   POST /optimize           - the best setups per style (see OptimizeRequest in optimize.ts)
+ *   GET  /osrs-dps/...       - the calculator itself (the static build in out/), which results' calcUrl links open
  *
  * Start it with `node src/server/start.js` (env: PORT, default 3124; OSRS_SYNC_DIR; OSRS_PLAYER).
  */
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -21,6 +23,48 @@ import type { StyleJob } from './styleWorker';
 const PORT = Number(process.env.PORT || 3124);
 const SYNC_DIR = process.env.OSRS_SYNC_DIR || DEFAULT_SYNC_DIR;
 const PLAYER = process.env.OSRS_PLAYER || undefined;
+
+// the calculator's static build (`npx next build`), served so that the calcUrl links work while this server runs
+const CALC_DIR = path.resolve(__dirname, '..', '..', 'out');
+const CALC_BASE = '/osrs-dps';
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.txt': 'text/plain; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+const serveCalc = (pathname: string, res: http.ServerResponse) => {
+  if (pathname === CALC_BASE) {
+    res.writeHead(302, { Location: `${CALC_BASE}/` }).end();
+    return;
+  }
+  const rel = path.normalize(decodeURIComponent(pathname.slice(CALC_BASE.length))).replace(/^[\\/]+/, '');
+  let file = path.join(CALC_DIR, rel || 'index.html');
+  if (!file.startsWith(CALC_DIR)) {
+    res.writeHead(404).end();
+    return;
+  }
+  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+    // Next exports routes as foo.html, but links point at /foo
+    file = fs.existsSync(`${file}.html`) ? `${file}.html` : path.join(CALC_DIR, '404.html');
+  }
+  if (!fs.existsSync(file)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end(`The calculator isn't built yet. Run "npx next build" in ${path.dirname(CALC_DIR)}`);
+    return;
+  }
+  res.writeHead(file.endsWith('404.html') ? 404 : 200, {
+    'Content-Type': CONTENT_TYPES[path.extname(file)] || 'application/octet-stream',
+    'Cache-Control': rel.startsWith('_next/static/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+  });
+  fs.createReadStream(file).pipe(res);
+};
 
 interface WorkerReply { id: number, loadouts?: unknown[], evaluations?: number, error?: string }
 
@@ -121,6 +165,7 @@ const server = http.createServer(async (req, res) => {
           player: account.player, updated: account.updated, items: account.itemIds.length, warnings: account.warnings,
         },
         accountError: error,
+        calcBuilt: fs.existsSync(path.join(CALC_DIR, 'index.html')),
       });
     } else if (req.method === 'GET' && url.pathname === '/monsters') {
       send(res, 200, searchMonsters(url.searchParams.get('name') || ''));
@@ -134,8 +179,10 @@ const server = http.createServer(async (req, res) => {
       const run = queue.then(() => optimize(body));
       queue = run.catch(() => undefined);
       send(res, 200, await run);
+    } else if (req.method === 'GET' && (url.pathname === CALC_BASE || url.pathname.startsWith(`${CALC_BASE}/`))) {
+      serveCalc(url.pathname, res);
     } else {
-      send(res, 404, { error: 'Use GET /health, GET /monsters?name=..., or POST /optimize' });
+      send(res, 404, { error: 'Use GET /health, GET /monsters?name=..., POST /optimize, or GET /osrs-dps/' });
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : `${e}`;

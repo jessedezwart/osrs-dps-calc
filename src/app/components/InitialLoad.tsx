@@ -5,12 +5,15 @@ import RootStore, { useStore } from '@/state/RootStore';
 import { availableMonsters } from '@/state/MonsterStore';
 import { CalcWorker } from '@/worker/CalcWorker';
 import { fetchShortlinkData } from '@/utils';
+import applySetupLink from '@/app/components/results/optimizer/applySetupLink';
 
 interface InitialLoadParams {
   /** `?id=`: a shortlink to load. */
   shortlinkId: string | null;
   /** `?monster=`: the id of a monster to select once everything else is loaded. */
   monsterId: string | null;
+  /** `?setup=`: a gear setup to load into a new loadout (fork, see SetupLink.ts). */
+  setup?: string | null;
 }
 
 interface InitialLoadResult {
@@ -76,6 +79,8 @@ export async function loadInitialData(root: RootStore, params: InitialLoadParams
     }
   }
 
+  if (params.setup) applySetupLink(root, params.setup);
+
   return { persistState };
 }
 
@@ -114,6 +119,7 @@ const InitialLoad: React.FC = () => {
     initialLoad.current ??= loadInitialData(root, {
       shortlinkId: searchParams.get('id'),
       monsterId: searchParams.get('monster'),
+      setup: searchParams.get('setup'),
     });
 
     let stopped = false;

@@ -1,0 +1,3 @@
+# Plain Node entry points of the optimizer server (src/server), not part of the TypeScript project
+src/server/*.js
+
