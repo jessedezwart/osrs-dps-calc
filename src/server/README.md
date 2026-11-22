@@ -82,3 +82,17 @@ The server also serves the boss guides live: open http://localhost:3124/guides/ 
 achievements and dryness, and its Refresh all button reruns the optimizer too. The same file is published as the Claude
 artifact; there it shows the last saved snapshot and links to the live page, since Claude pages can't reach local
 tools yet (it would use the MCP server above once they can). The tools live in `guideTools.js`.
+## Guide data and the guide template
+
+- `GET /guide-data?source=Brutus&monster=Brutus&kind=boss` (or `POST` the same JSON, or `?guide=<slug>` for a saved
+  guide): everything a guide needs in one call (see `guideData.js`): kill count, collection log slots with have/missing,
+  rate and dryness %, combat achievements, other drops, owned items (`items=`), missing quests/levels, stale-file
+  warnings and, for bosses and slayer monsters, the best gear per style. The gear optimizer runs at the same time as the
+  rest and is skipped for `kind=activity` or `gear=0`.
+- Wiki data (collection log slots, combat achievements, item names, drop tables) is cached by `wikiCache.js` in
+  `OSRS_WIKI_CACHE` (default `~/osrs-tools/cache/wiki`) and refreshed in the background when over a week old;
+  `node src/server/wikiCache.js --refresh` fetches everything again.
+- Guides are `guides/<slug>.json` (content) rendered with `guides/_template.html` (see `guidePage.js`). The server
+  serves them live at `/guides/<slug>` and keeps the last data in `guides/snapshots/` (not committed).
+  `node src/server/buildGuide.js <slug> [--cached|--no-gear]` writes `guides/<slug>.html` for publishing as an artifact
+  and prints a summary. The guide workflow and layouts are in `.claude/skills/osrs-guides/SKILL.md`.

@@ -1,0 +1,310 @@
+<title>__TITLE__</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: stat strip header with refresh control, then a two-column board: gear (wide) beside mechanics + CAs, trivia full width below.
+   Shared by every guide: content from guides/<slug>.json, data from /guide-data (see guidePage.js). */
+:root{
+  --bg:#f3f4ef; --panel:#ffffff; --fg:#1d221c; --muted:#5f6a5c; --line:#dde2d6;
+  --accent:#7a4a24; --accent-soft:#f3e7da;
+  --good:#2f7a3b; --good-soft:#e3f1e3; --bad:#b0412e; --bad-soft:#f7e3de; --warn:#9a6a00; --warn-soft:#f6ecd2;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141812; --panel:#1c211a; --fg:#e7ebe2; --muted:#9aa595; --line:#2e362b;
+  --accent:#d79a63; --accent-soft:#33261b;
+  --good:#7fcf8a; --good-soft:#1f3322; --bad:#f08c78; --bad-soft:#3a221d; --warn:#e6bb55; --warn-soft:#352c16; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141812; --panel:#1c211a; --fg:#e7ebe2; --muted:#9aa595; --line:#2e362b;
+  --accent:#d79a63; --accent-soft:#33261b;
+  --good:#7fcf8a; --good-soft:#1f3322; --bad:#f08c78; --bad-soft:#3a221d; --warn:#e6bb55; --warn-soft:#352c16; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--body)}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:.01em}
+h1{font-size:44px;line-height:1}
+h2{font-size:22px;text-transform:uppercase;letter-spacing:.06em}
+h3{font-size:16px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.num{font-variant-numeric:tabular-nums}
+
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;border-bottom:2px solid var(--fg);padding-bottom:16px}
+.top .sub{color:var(--muted);margin-top:6px}
+.right{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+@media (max-width:640px){.right{align-items:flex-start}}
+.stats{display:flex;flex-wrap:wrap;gap:6px}
+.stat{border:1px solid var(--line);background:var(--panel);padding:6px 10px;border-radius:6px;min-width:70px}
+.stat b{display:block;font-family:var(--mono);font-size:15px;font-weight:500}
+.refresh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.refresh button{font:600 13px var(--body);padding:7px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--panel);cursor:pointer}
+.refresh button:disabled{opacity:.6;cursor:progress}
+.refresh .status{font-size:12px;color:var(--muted)}
+.refresh .status.err{color:var(--bad)}
+
+.board{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.board{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:20px;min-width:0}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.sh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+
+.facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 14px;margin:0}
+.facts dt{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding-top:2px}
+.facts dd{margin:0}
+@media (max-width:480px){.facts{grid-template-columns:minmax(0,1fr)}.facts dd{margin-bottom:6px}}
+
+.styles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.styles{grid-template-columns:minmax(0,1fr)}}
+.style{border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.style.best{border-color:var(--accent);background:var(--accent-soft)}
+.style .dps{font-family:var(--mono);font-size:22px}
+.style .meta{color:var(--muted);font-size:12px}
+.style a{font-size:12px;font-weight:600;margin-top:4px}
+
+.slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--line);border-radius:6px;overflow:hidden}
+@media (max-width:480px){.slots{grid-template-columns:minmax(0,1fr)}}
+.slot{display:flex;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);margin-bottom:-1px}
+.slot:nth-child(odd){border-right:1px solid var(--line)}
+.slot span:first-child{width:58px;flex:none;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding-top:1px}
+.note{font-size:12px;color:var(--muted);margin:0}
+
+.mech{display:flex;flex-direction:column;gap:10px}
+.mech-item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;align-items:start}
+.cue{font-family:var(--mono);font-size:12px;background:var(--warn-soft);color:var(--warn);padding:2px 8px;border-radius:4px;white-space:nowrap}
+.mech-item p{margin:0}
+
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.have{background:var(--good-soft);color:var(--good)}
+.pill.miss{background:var(--bad-soft);color:var(--bad)}
+.pill.tier{background:var(--accent-soft);color:var(--accent)}
+
+.trivia{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:20px}
+@media (max-width:760px){.trivia{grid-template-columns:minmax(0,1fr)}}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;width:80px;display:inline-block;vertical-align:middle;margin-left:8px}
+.bar i{display:block;height:100%;background:var(--good)}
+
+.ca{display:flex;flex-direction:column;gap:12px}
+.ca-item{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:4px}
+.ca-item:first-child{border-top:0;padding-top:0}
+.ca-item .t{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ca-item .t a{font-weight:600}
+.ca-item p{margin:0}
+.ca-item .how{color:var(--muted)}
+.done-all{color:var(--good);font-weight:600}
+footer{font-size:12px;color:var(--muted)}
+ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.alert{border:1px solid var(--bad);background:var(--bad-soft);color:var(--fg);border-radius:8px;padding:10px 14px}
+.alert b{color:var(--bad)}
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script id="main">
+(() => {
+  const SLUG = /*SLUG*/"";
+  const G = /*GUIDE*/null;
+  let D = /*DATA*/null;
+  const WIKI = 'https://oldschool.runescape.wiki/w/';
+  const LIVE_URL = `http://localhost:3124/guides/${SLUG}`;
+  const live = ['localhost', '127.0.0.1'].includes(location.hostname);
+  let busy = false;
+  let status = { text: '', err: false };
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const page = (p) => WIKI + encodeURIComponent(String(p).replace(/ /g, '_')).replace(/%2F/g, '/').replace(/%23/g, '#');
+  const clean = (s) => String(s || '').replace(/\s*\[[^\]]*\]/g, '').trim();
+  const fmtTime = (iso) => { try { return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+  const base = (s) => String(s || '').toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const unesc = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  // mini markup in the guide's text: [[Page]], [[Page|text]], **bold**, {have:Item}
+  const md = (t) => esc(t)
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, (_, p, l) => `<a href="${esc(page(unesc(p)))}">${l}</a>`)
+    .replace(/\[\[([^\]]+)\]\]/g, (_, p) => `<a href="${esc(page(unesc(p)))}">${p}</a>`)
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/\{have:([^}]+)\}/g, (_, n) => {
+      const o = D?.owned?.[unesc(n).trim()];
+      if (!o) return '';
+      return o.have ? '<span class="pill have">you have it</span>' : '<span class="pill miss">not owned</span>';
+    });
+
+  const SLOTS = ['head', 'cape', 'neck', 'ammo', 'weapon', 'shield', 'body', 'legs', 'hands', 'feet', 'ring'];
+  const STYLE_NAMES = { melee: 'Melee', ranged: 'Ranged', magic: 'Magic' };
+  const KIND = { boss: 'Boss guide', slayer: 'Slayer task', activity: 'Activity guide' };
+  const TIER_ORDER = ['Easy', 'Medium', 'Hard', 'Elite', 'Master', 'Grandmaster'];
+
+  const panel = (id, title, note, body) => `<section aria-labelledby="${id}-h">
+      <div class="sh"><h2 id="${id}-h">${esc(title)}</h2>${note ? `<span class="note">${note}</span>` : ''}</div>${body}</section>`;
+  const facts = (rows) => (rows && rows.length ? `<dl class="facts">${rows.map(([l, t]) => `<dt>${esc(l)}</dt><dd>${md(t)}</dd>`).join('')}</dl>` : '');
+  const table = (head, rows, right = []) => `<div class="tbl-wrap"><table>
+      <thead><tr>${head.map((h, i) => `<th${right.includes(i) ? ' class="r"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${right.includes(i) ? ' class="r"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+
+  // a free section from the guide: bullets (items), label/value rows (facts) or a table (head + rows)
+  const section = (s, i) => {
+    let body = '';
+    if (s.items) body += `<ul class="list">${s.items.map((t) => `<li>${md(t)}</li>`).join('')}</ul>`;
+    if (s.facts) body += facts(s.facts);
+    if (s.rows) body += table(s.head || [], s.rows.map((r) => r.map(md)), s.right || []);
+    return panel(`s${i}`, s.title, s.note ? md(s.note) : '', body);
+  };
+
+  const gearPanel = () => {
+    const g = D?.gear;
+    const res = g?.results || {};
+    const best = g?.best;
+    let body = '';
+    if (best && res[best]) {
+      const cards = ['melee', 'ranged', 'magic'].filter((k) => res[k]).map((k) => {
+        const r = res[k];
+        const weapon = r.spell ? `${r.spell}, ${clean(r.equipment.weapon)}` : clean(r.equipment.weapon);
+        return `<div class="style${k === best ? ' best' : ''}">
+          <span class="label">${STYLE_NAMES[k]}${k === best ? ' · best' : ''}</span>
+          <span class="dps num">${r.dps.toFixed(2)}</span>
+          <span class="meta num">${esc(weapon)} · ${r.secondsPerKill}s</span>
+          <a href="${esc(r.calcUrl)}">Open in DPS calc</a></div>`;
+      }).join('');
+      const b = res[best];
+      const stance = /^(.*?) \(([^,]+), ([^)]+)\)$/.exec(b.style || '');
+      const slots = SLOTS.filter((s) => b.equipment[s]).map((s) => {
+        let v = clean(b.equipment[s]);
+        if (s === 'weapon') v += b.spell ? ` (${b.spell})` : (stance ? ` (${stance[1]}, ${stance[3].toLowerCase()})` : '');
+        return `<div class="slot"><span>${s}</span><span>${esc(v)}</span></div>`;
+      }).join('');
+      body += `<div class="styles">${cards}</div><div><h3 style="margin-bottom:8px">${STYLE_NAMES[best]} setup</h3><div class="slots">${slots}</div></div>`;
+    } else if (G.kind !== 'activity') {
+      body += `<p class="note">${live ? 'No gear yet. Press Rerun gear.' : 'No gear in this snapshot.'}</p>`;
+    }
+    body += facts(G.facts);
+    const note = G.gearNote ? md(G.gearNote) : (g ? esc([...(g.prayers || []), ...(g.potions || [])].join(' · ') || 'No prayers or potions') : '');
+    return panel('gear', G.kind === 'activity' ? (G.factsTitle || 'Overview') : 'Gear and inventory', note, body);
+  };
+
+  const mechPanel = () => {
+    const m = G.mechanics;
+    if (!m || !m.items || !m.items.length) return '';
+    const body = `<div class="mech">${m.items.map((x) => `<div class="mech-item">${x.cue ? `<span class="cue">${esc(x.cue)}</span>` : '<span></span>'}<p>${x.title ? `<b>${md(x.title)}</b> ` : ''}${md(x.text)}</p></div>`).join('')}</div>`;
+    return panel('mech', 'Mechanics', m.note ? md(m.note) : '', body);
+  };
+
+  const caPanel = () => {
+    const cas = D?.cas || [];
+    if (!cas.length) return '';
+    const open = cas.filter((c) => !c.done).sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
+    const how = G.caHow || {};
+    const body = open.length ? `<div class="ca">${open.map((c) => `<div class="ca-item">
+        <div class="t"><span class="pill tier">${esc(c.tier)}</span><a href="${esc(page(c.name))}">${esc(c.name)}</a></div>
+        <p>${esc(c.task)}</p>${how[c.id] ? `<p class="how">${md(how[c.id])}</p>` : ''}</div>`).join('')}</div>`
+      : `<p class="done-all">All ${esc(G.title)} Combat Achievements done.</p>`;
+    return panel('ca', 'Combat Achievements', open.length ? `${open.length} left · ${D.casOpenPoints} pts` : '', body);
+  };
+
+  const triviaPanel = () => {
+    const drops = D?.drops || [];
+    const notable = (G.notableDrops || []).map((n) => {
+      if (Array.isArray(n)) return [md(n[0]), esc(n[1])];
+      const byRate = (a, b) => (b.rate ?? 0) - (a.rate ?? 0);
+      const exact = drops.filter((x) => x.item.toLowerCase() === n.toLowerCase()).sort(byRate);
+      const d = exact[0] || drops.filter((x) => base(x.item) === base(n)).sort(byRate)[0];
+      const c = (D?.clog || []).find((x) => x.name.toLowerCase() === n.toLowerCase());
+      return [`<a href="${esc(page(n))}">${esc(n)}</a>`, esc(d ? d.rarity : (c?.rate || '?'))];
+    });
+    const clog = D?.clog || [];
+    const have = clog.filter((c) => c.have).length;
+    const rows = clog.map((c) => [
+      `<a href="${esc(page(c.name))}">${esc(c.name)}</a>${c.pet ? ' (pet)' : ''}`,
+      `<span class="pill ${c.have ? 'have' : 'miss'}">${c.have ? 'Have' : 'Missing'}</span>`,
+      esc(c.rate || '–'),
+      c.have ? '–' : (c.dry == null ? '<span class="note">not in dryness.py</span>'
+        : `${c.dry.toFixed(1)}%<span class="bar" aria-hidden="true"><i style="width:${c.dry}%"></i></span>`),
+    ]);
+    if (!notable.length && !clog.length) return '';
+    const left = notable.length ? `<div><h3 style="margin-bottom:8px">Notable drops</h3>${table(['Drop', 'Rate'], notable, [1])}</div>` : '';
+    const right = clog.length ? `<div><h3 style="margin-bottom:8px">Collection log · ${have} of ${clog.length}</h3>
+        ${table(['Item', 'Status', 'Rate', 'Chance this dry'], rows, [2, 3])}
+        <p class="note" style="margin-top:6px">A high % means being this dry is normal at your kc.</p></div>` : '';
+    return panel('triv', 'Trivia', D?.kc?.value != null ? `${D.kc.value} ${esc(G.kcLabel || 'kc')}` : '',
+      `<div class="trivia"${left && right ? '' : ' style="grid-template-columns:minmax(0,1fr)"'}>${left}${right}</div>`);
+  };
+
+  const render = () => {
+    const sec = (col) => (G.sections || []).map((s, i) => ((s.column || 'left') === col ? section(s, i) : '')).join('');
+    const stats = (G.stats || []).map(([l, v]) => `<div class="stat"><span class="label">${esc(l)}</span><b class="num">${esc(v)}</b></div>`).join('');
+    const kc = D?.kc?.value;
+    const missing = (D?.missing || []).map((m) => (m.type === 'quest' ? `<a href="${esc(page(m.name))}">${esc(m.name)}</a>` : `${esc(m.need)} ${esc(m.name)} (you have ${esc(m.have)})`));
+    const stale = D?.stale?.length ? ` <span style="color:var(--bad)">· ${esc(D.stale.join(', '))} over a day old, press Export</span>` : '';
+    const womStale = D?.wiseOldMan?.stale ? ' · <a href="https://wiseoldman.net/players/gim%20fasd">Wise Old Man</a> is a few days old, update it' : '';
+    const right = `${mechPanel()}${caPanel()}${sec('right')}`;
+    const button = D?.gearRequest || G.data?.monster ? 'Rerun gear' : 'Refresh';
+
+    document.getElementById('app').innerHTML = `
+  <div class="top">
+    <div>
+      <div class="label">${esc(G.kicker || KIND[G.kind] || KIND.boss)}${D?.player ? ` · ${esc(D.player)}` : ''}</div>
+      <h1><a href="${esc(page(G.wiki || G.title))}" style="color:inherit;text-decoration:none">${esc(G.title)}</a></h1>
+      <div class="sub">${md(G.subtitle || '')}${kc != null ? `${G.subtitle ? ' · ' : ''}<span class="num">${kc}</span> ${esc(G.kcLabel || 'kc')}` : ''}</div>
+    </div>
+    <div class="right">
+      ${stats ? `<div class="stats" aria-label="Stats">${stats}</div>` : ''}
+      <div class="refresh">
+        <span class="status${status.err ? ' err' : ''}" role="status">${esc(status.text || (D ? `Saved ${fmtTime(D.at)}` : 'No data yet'))}</span>
+        ${live ? `<button id="refreshBtn" type="button" ${busy ? 'disabled' : ''}>${busy ? 'Refreshing…' : button}</button>` : `<a href="${LIVE_URL}">Open live page</a>`}
+      </div>
+    </div>
+  </div>
+  ${missing.length ? `<div class="alert"><b>Missing:</b> ${missing.join(', ')}</div>` : ''}
+  <div class="board"${right ? '' : ' style="grid-template-columns:minmax(0,1fr)"'}>
+    <div class="col">${gearPanel()}${sec('left')}</div>
+    ${right ? `<div class="col">${right}</div>` : ''}
+  </div>
+  ${sec('full')}
+  ${triviaPanel()}
+  <footer>Data from your sync files${D?.files ? ` (kills ${esc(fmtTime(D.files.killcounts))}, collection log ${esc(fmtTime(D.files.clog))})` : ''}${stale}${womStale}. Rates, tasks and mechanics from the OSRS Wiki.</footer>`;
+    const btn = document.getElementById('refreshBtn');
+    if (btn) btn.addEventListener('click', () => refresh(true));
+  };
+
+  const refresh = async (full, auto = false) => {
+    if (!live || busy) return;
+    busy = true;
+    const before = JSON.stringify({ ...D, at: null, timings: null });
+    if (!auto) { status = { text: full ? 'Reading sync files and running the optimizer…' : 'Updating…', err: false }; render(); }
+    try {
+      const r = await fetch(`/guide-data?guide=${SLUG}${full ? '' : '&gear=0'}`, { cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      D = j;
+      busy = false;
+      status = j.warnings?.length ? { text: `Updated with warnings: ${j.warnings.join('; ')}`, err: true } : { text: `Live · updated ${fmtTime(j.at)}`, err: false };
+      // auto refreshes that changed nothing only touch the status line, so scrolling and selection aren't disturbed
+      const el = document.querySelector('.refresh .status');
+      if (auto && el && JSON.stringify({ ...D, at: null, timings: null }) === before) {
+        el.textContent = status.text;
+        el.classList.toggle('err', status.err);
+        return;
+      }
+      render();
+    } catch (e) {
+      busy = false;
+      status = { text: `Refresh failed: ${e?.message || e}`, err: true };
+      render();
+    }
+  };
+
+  render();
+  if (live) {
+    // kc, collection log, dryness and CAs every 30s while the tab is visible; gear only from the button
+    const tick = () => { if (!document.hidden) refresh(false, true); };
+    tick();
+    setInterval(tick, 30 * 1000);
+    document.addEventListener('visibilitychange', tick);
+  }
+})();
+</script>

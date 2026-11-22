@@ -193,6 +193,30 @@ const tools = {
     },
   },
 
+  guide_data: {
+    description: 'Everything a guide needs in one call: kc, collection log (have/missing, rate, dryness %), combat achievements, '
+      + 'other drops, owned items, missing requirements and (for bosses/slayer with a monster) the best gear per style. '
+      + 'Pass guide (a saved guide in src/server/guides) or source plus optional kind, monster, version, items, quests, clog.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        guide: { type: 'string' },
+        source: { type: 'string', description: 'Loot tracker / collection log name, e.g. "Brutus", "Tempoross"' },
+        kind: { type: 'string', enum: ['boss', 'slayer', 'activity'] },
+        monster: { type: 'string' },
+        version: { type: 'string' },
+        gear: { type: 'boolean' },
+        items: { type: 'array', items: { type: 'string' } },
+        quests: { type: 'array', items: { type: 'string' } },
+        clog: { type: 'array', items: { type: 'string' } },
+      },
+    },
+    run: async (args) => {
+      await ensureOptimizer();
+      return request('POST', '/guide-data', args, 300000);
+    },
+  },
+
   optimize: {
     description: 'Best gear per combat style for a monster, from the local gear optimizer (starts it if needed). '
       + 'Same body as POST /optimize: monster, version, onSlayerTask, potions, prayers, styles, locked, excludeItems.',
@@ -233,4 +257,6 @@ const tools = {
   },
 };
 
-module.exports = { tools };
+module.exports = {
+  tools, accountDir, readJson, runDryness, parseDryness, request, ensureOptimizer, STALE_MS,
+};

@@ -2,7 +2,8 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
 <style>
-/* Layout: stat strip header with refresh control, then a two-column board: gear (wide) beside mechanics + CAs, trivia full width below */
+/* Layout: stat strip header with refresh control, then a two-column board: gear (wide) beside mechanics + CAs, trivia full width below.
+   Shared by every guide: content from guides/<slug>.json, data from /guide-data (see guidePage.js). */
 :root{
   --bg:#f3f4ef; --panel:#ffffff; --fg:#1d221c; --muted:#5f6a5c; --line:#dde2d6;
   --accent:#7a4a24; --accent-soft:#f3e7da;
@@ -99,448 +100,746 @@ td.r,th.r{text-align:right}
 .ca-item .how{color:var(--muted)}
 .done-all{color:var(--good);font-weight:600}
 footer{font-size:12px;color:var(--muted)}
+ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.alert{border:1px solid var(--bad);background:var(--bad-soft);color:var(--fg);border-radius:8px;padding:10px 14px}
+.alert b{color:var(--bad)}
 </style>
 
 <div class="wrap" id="app"></div>
 
-<script type="application/json" id="state">
-{
- "savedAt": "2026-11-22T12:31:01.717Z",
- "kills": 80,
- "files": {
-  "progress": "2026-11-22T12:30:59.100318700Z",
-  "clog": "2026-11-22T12:29:55.485576300Z",
-  "killcounts": "2026-11-22T12:30:28.482565800Z"
- },
- "stale": [],
- "optimizer": {
-  "monster": "Brutus",
-  "version": "Post-quest",
-  "onSlayerTask": false,
-  "potions": [
-   "Super combat",
-   "Super ranging"
+<script id="main">
+(() => {
+  const SLUG = "brutus";
+  const G = {
+ "kind": "boss",
+ "title": "Brutus",
+ "kicker": "Boss guide · off task",
+ "subtitle": "Lumbridge cow field, NE corner",
+ "stats": [
+  [
+   "HP",
+   "58"
   ],
-  "prayers": [
-   "piety",
-   "eagle eye",
-   "mystic might"
+  [
+   "Attack",
+   "Crush"
+  ],
+  [
+   "Speed",
+   "5t"
+  ],
+  [
+   "Max hit",
+   "3 / 19"
+  ],
+  [
+   "Respawn",
+   "13t"
+  ],
+  [
+   "Weak",
+   "Earth"
+  ]
+ ],
+ "data": {
+  "source": "Brutus",
+  "monster": "Brutus",
+  "version": "Post-quest"
+ },
+ "gearNote": "Piety · super combat + super ranging",
+ "facts": [
+  [
+   "Method",
+   "Melee from the tile east of his spawn. He never charges into a wall from there."
+  ],
+  [
+   "Cannonable",
+   "❌"
+  ],
+  [
+   "Instanced",
+   "✅"
+  ],
+  [
+   "Travel",
+   "[[Cowbell amulet]] {have:Cowbell amulet}"
+  ],
+  [
+   "Prayers",
+   "Piety + Protect from Melee. Protection only blocks his basic hit; specials ignore it."
+  ],
+  [
+   "Inventory",
+   "Super combat, a few prayer potions, a little food, air runes, tinderbox (burn his oak logs between kills)."
+  ],
+  [
+   "Safespot",
+   "South of the pen between the two troughs, touching the fence. He stomps if you stand only one tile away."
+  ]
+ ],
+ "mechanics": {
+  "note": "Special every 4–5 hits",
+  "items": [
+   {
+    "cue": "*growls*",
+    "title": "Charge.",
+    "text": "4-tile dash after 3 ticks. Step to the side."
+   },
+   {
+    "cue": "*snorts*",
+    "title": "Slam.",
+    "text": "Hits the tiles in front 3 times after 4 ticks. Step back one tile."
+   },
+   {
+    "cue": "*huff*",
+    "title": "Pathing.",
+    "text": "Out of range too long, he walks around obstacles to reach you. Re-safespot."
+   }
   ]
  },
- "gear": {
-  "melee": {
-   "dps": 9.816,
-   "secondsPerKill": 5.9,
-   "style": "Flick (slash, Accurate)",
-   "spell": null,
-   "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoyNDI3MX0sImNhcGUiOnsiaWQiOjY1NzB9LCJuZWNrIjp7ImlkIjo2NTg1fSwiYW1tbyI6eyJpZCI6MjAyMjZ9LCJ3ZWFwb24iOnsiaWQiOjQxNTF9LCJib2R5Ijp7ImlkIjoyOTAyMn0sInNoaWVsZCI6eyJpZCI6MTI5NTR9LCJsZWdzIjp7ImlkIjoyMTMwNH0sImhhbmRzIjp7ImlkIjo3NDYyfSwiZmVldCI6eyJpZCI6MTE4NDB9LCJyaW5nIjp7ImlkIjoxMTc3M319LCJzdHlsZSI6eyJuYW1lIjoiRmxpY2siLCJ0eXBlIjoic2xhc2giLCJzdGFuY2UiOiJBY2N1cmF0ZSJ9LCJzcGVsbCI6bnVsbCwicHJheWVycyI6WzEzXSwic2tpbGxzIjp7ImF0ayI6OTQsImRlZiI6OTIsImhwIjo5OSwibWFnaWMiOjk0LCJwcmF5ZXIiOjc5LCJyYW5nZWQiOjkxLCJzdHIiOjk5LCJtaW5pbmciOjk0LCJoZXJibG9yZSI6ODIsImZhcm1pbmciOjg5fSwiYm9vc3RzIjp7ImF0ayI6MTksImRlZiI6MTgsIm1hZ2ljIjowLCJwcmF5ZXIiOjAsInJhbmdlZCI6MTgsInN0ciI6MTksIm1pbmluZyI6MCwiaGVyYmxvcmUiOjAsImZhcm1pbmciOjAsImhwIjowfSwiYnVmZnMiOnsicG90aW9ucyI6WzE0LDEzXSwib25TbGF5ZXJUYXNrIjpmYWxzZSwiaW5XaWxkZXJuZXNzIjpmYWxzZSwia2FuZGFyaW5EaWFyeSI6dHJ1ZSwiY2hhcmdlU3BlbGwiOmZhbHNlLCJtYXJrT2ZEYXJrbmVzc1NwZWxsIjpmYWxzZSwiZm9yaW50aHJ5U3VyZ2UiOmZhbHNlLCJzb3VscmVhcGVyU3RhY2tzIjo1LCJiYUF0dGFja2VyTGV2ZWwiOjAsImNoaW5jaG9tcGFEaXN0YW5jZSI6NCwidXNpbmdTdW5maXJlUnVuZXMiOmZhbHNlLCJmcmFnbWVudE9mV2luZCI6ZmFsc2UsImZyYWdtZW50T2ZXYXRlciI6ZmFsc2UsImZyYWdtZW50T2ZFYXJ0aCI6ZmFsc2UsImZyYWdtZW50T2ZGaXJlIjpmYWxzZX19",
-   "equipment": {
-    "head": "Neitiznot faceguard",
-    "cape": "Fire cape [Normal]",
-    "neck": "Amulet of fury",
-    "ammo": "Peaceful blessing",
-    "weapon": "Abyssal whip",
-    "body": "Blood Moon chestplate [New]",
-    "shield": "Dragon defender [Normal]",
-    "legs": "Obsidian platelegs",
-    "hands": "Barrows gloves",
-    "feet": "Dragon boots",
-    "ring": "Berserker ring (i)"
-   }
-  },
-  "ranged": {
-   "dps": 9.325,
-   "secondsPerKill": 6.2,
-   "style": "Rapid (ranged, Rapid)",
-   "spell": null,
-   "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoxMTY2NH0sImNhcGUiOnsiaWQiOjIyMTA5fSwibmVjayI6eyJpZCI6MzQ0MDF9LCJhbW1vIjp7ImlkIjoyMDIyNn0sIndlYXBvbiI6eyJpZCI6MzE1ODMsIml0ZW1WYXJzIjp7ImJsb3dwaXBlRGFydE5hbWUiOiJSdW5lIGRhcnQiLCJibG93cGlwZURhcnRJZCI6ODE3fX0sImJvZHkiOnsiaWQiOjEzMDcyfSwibGVncyI6eyJpZCI6MTMwNzN9LCJoYW5kcyI6eyJpZCI6ODg0Mn0sImZlZXQiOnsiaWQiOjI1Nzd9LCJyaW5nIjp7ImlkIjoxMTc3MX19LCJzdHlsZSI6eyJuYW1lIjoiUmFwaWQiLCJ0eXBlIjoicmFuZ2VkIiwic3RhbmNlIjoiUmFwaWQifSwic3BlbGwiOm51bGwsInByYXllcnMiOlsxMF0sInNraWxscyI6eyJhdGsiOjk0LCJkZWYiOjkyLCJocCI6OTksIm1hZ2ljIjo5NCwicHJheWVyIjo3OSwicmFuZ2VkIjo5MSwic3RyIjo5OSwibWluaW5nIjo5NCwiaGVyYmxvcmUiOjgyLCJmYXJtaW5nIjo4OX0sImJvb3N0cyI6eyJhdGsiOjE5LCJkZWYiOjE4LCJtYWdpYyI6MCwicHJheWVyIjowLCJyYW5nZWQiOjE4LCJzdHIiOjE5LCJtaW5pbmciOjAsImhlcmJsb3JlIjowLCJmYXJtaW5nIjowLCJocCI6MH0sImJ1ZmZzIjp7InBvdGlvbnMiOlsxNCwxM10sIm9uU2xheWVyVGFzayI6ZmFsc2UsImluV2lsZGVybmVzcyI6ZmFsc2UsImthbmRhcmluRGlhcnkiOnRydWUsImNoYXJnZVNwZWxsIjpmYWxzZSwibWFya09mRGFya25lc3NTcGVsbCI6ZmFsc2UsImZvcmludGhyeVN1cmdlIjpmYWxzZSwic291bHJlYXBlclN0YWNrcyI6NSwiYmFBdHRhY2tlckxldmVsIjowLCJjaGluY2hvbXBhRGlzdGFuY2UiOjQsInVzaW5nU3VuZmlyZVJ1bmVzIjpmYWxzZSwiZnJhZ21lbnRPZldpbmQiOmZhbHNlLCJmcmFnbWVudE9mV2F0ZXIiOmZhbHNlLCJmcmFnbWVudE9mRWFydGgiOmZhbHNlLCJmcmFnbWVudE9mRmlyZSI6ZmFsc2V9fQ",
-   "equipment": {
-    "head": "Void ranger helm [Normal]",
-    "cape": "Ava's assembler [Normal]",
-    "neck": "Necklace of Fangs",
-    "ammo": "Peaceful blessing",
-    "weapon": "Rosewood blowpipe [Charged] (Rune dart)",
-    "body": "Elite void top [Normal]",
-    "legs": "Elite void robe [Normal]",
-    "hands": "Void knight gloves [Normal]",
-    "feet": "Ranger boots",
-    "ring": "Archers ring (i)"
-   }
-  },
-  "magic": {
-   "dps": 5.814,
-   "secondsPerKill": 10,
-   "style": "Spell (magic, Autocast)",
-   "spell": "Earth Wave",
-   "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoxMTY2M30sImNhcGUiOnsiaWQiOjIxNzkxfSwibmVjayI6eyJpZCI6MzQ0Mjh9LCJhbW1vIjp7ImlkIjoyMDIyNn0sIndlYXBvbiI6eyJpZCI6MzA2MzR9LCJib2R5Ijp7ImlkIjoxMzA3Mn0sInNoaWVsZCI6eyJpZCI6MTI2MTJ9LCJsZWdzIjp7ImlkIjoxMzA3M30sImhhbmRzIjp7ImlkIjo4ODQyfSwiZmVldCI6eyJpZCI6NjkyMH0sInJpbmciOnsiaWQiOjkxMDR9fSwic3R5bGUiOnsibmFtZSI6IlNwZWxsIiwidHlwZSI6Im1hZ2ljIiwic3RhbmNlIjoiQXV0b2Nhc3QifSwic3BlbGwiOiJFYXJ0aCBXYXZlIiwicHJheWVycyI6WzExXSwic2tpbGxzIjp7ImF0ayI6OTQsImRlZiI6OTIsImhwIjo5OSwibWFnaWMiOjk0LCJwcmF5ZXIiOjc5LCJyYW5nZWQiOjkxLCJzdHIiOjk5LCJtaW5pbmciOjk0LCJoZXJibG9yZSI6ODIsImZhcm1pbmciOjg5fSwiYm9vc3RzIjp7ImF0ayI6MTksImRlZiI6MTgsIm1hZ2ljIjowLCJwcmF5ZXIiOjAsInJhbmdlZCI6MTgsInN0ciI6MTksIm1pbmluZyI6MCwiaGVyYmxvcmUiOjAsImZhcm1pbmciOjAsImhwIjowfSwiYnVmZnMiOnsicG90aW9ucyI6WzE0LDEzXSwib25TbGF5ZXJUYXNrIjpmYWxzZSwiaW5XaWxkZXJuZXNzIjpmYWxzZSwia2FuZGFyaW5EaWFyeSI6dHJ1ZSwiY2hhcmdlU3BlbGwiOmZhbHNlLCJtYXJrT2ZEYXJrbmVzc1NwZWxsIjpmYWxzZSwiZm9yaW50aHJ5U3VyZ2UiOmZhbHNlLCJzb3VscmVhcGVyU3RhY2tzIjo1LCJiYUF0dGFja2VyTGV2ZWwiOjAsImNoaW5jaG9tcGFEaXN0YW5jZSI6NCwidXNpbmdTdW5maXJlUnVuZXMiOmZhbHNlLCJmcmFnbWVudE9mV2luZCI6ZmFsc2UsImZyYWdtZW50T2ZXYXRlciI6ZmFsc2UsImZyYWdtZW50T2ZFYXJ0aCI6ZmFsc2UsImZyYWdtZW50T2ZGaXJlIjpmYWxzZX19",
-   "equipment": {
-    "head": "Void mage helm [Normal]",
-    "cape": "Imbued Saradomin cape [Normal]",
-    "neck": "Elemental amulet",
-    "ammo": "Peaceful blessing",
-    "weapon": "Twinflame staff",
-    "body": "Elite void top [Normal]",
-    "shield": "Book of Darkness",
-    "legs": "Elite void robe [Normal]",
-    "hands": "Void knight gloves [Normal]",
-    "feet": "Infinity boots",
-    "ring": "Lunar ring"
-   }
-  }
+ "caHow": {
+  "634": "[[Dragon halberd]] spec {have:Dragon halberd}. Kill him once first, then spec as he spawns. Also completes Smarter than a Cow.",
+  "635": "Drink potions before he spawns; prayers are fine. Take off the cowbell amulet too (the wiki doesn't say if it counts).",
+  "636": "Trough safespot with the blowpipe. Move and re-safespot on *growls* or *huff*."
+ },
+ "notableDrops": [
+  "Clue scroll (beginner)",
+  "Clue scroll (easy)",
+  [
+   "Raw t-bone steak, bull bones",
+   "always"
+  ]
+ ]
+};
+  let D = {
+ "source": "Brutus",
+ "kind": "boss",
+ "player": "GIM Fasd",
+ "kc": {
+  "value": 101,
+  "lootTracker": 100,
+  "wiseOldMan": null,
+  "dryness": 101
  },
  "clog": [
   {
-   "id": 33101,
-   "name": "Mooleta",
-   "wiki": "Mooleta",
-   "rate": "1/30",
-   "count": 0,
-   "dry": null
-  },
-  {
    "id": 33091,
-   "name": "Bottomless milk bucket",
-   "match": "Bottomless milk bucket",
+   "name": "Bottomless milk bucket (empty)",
    "wiki": "Bottomless_milk_bucket_(empty)",
-   "rate": "1/37.5",
+   "have": true,
    "count": 1,
-   "dry": null
+   "rate": "1/37.5",
+   "dry": null,
+   "lucky": null,
+   "pet": false
   },
   {
    "id": 33093,
    "name": "Cow slippers",
    "wiki": "Cow_slippers",
-   "rate": "1/150",
+   "have": true,
    "count": 1,
-   "dry": null
+   "rate": "1/150",
+   "dry": null,
+   "lucky": 41,
+   "pet": false
+  },
+  {
+   "id": 33101,
+   "name": "Mooleta",
+   "wiki": "Mooleta",
+   "have": true,
+   "count": 1,
+   "rate": "1/30",
+   "dry": null,
+   "lucky": null,
+   "pet": false
   },
   {
    "id": 33124,
    "name": "Beef",
-   "suffix": " (pet)",
    "wiki": "Beef",
-   "rate": "1/1,000",
+   "have": false,
    "count": 0,
-   "dry": 92.3
+   "rate": "1/1,000",
+   "dry": 90.4,
+   "lucky": null,
+   "pet": true
   }
  ],
+ "clogHave": 3,
  "cas": [
   {
    "id": 632,
-   "tier": "Easy",
    "name": "Brutus Novice",
    "wiki": "Brutus_Novice",
-   "text": "Kill Brutus.",
+   "tier": "Easy",
+   "type": "Kill Count",
+   "task": "Kill Brutus.",
    "done": true
   },
   {
    "id": 633,
-   "tier": "Medium",
    "name": "Brutus Champion",
    "wiki": "Brutus_Champion",
-   "text": "Kill Brutus 10 times.",
+   "tier": "Medium",
+   "type": "Kill Count",
+   "task": "Kill Brutus 10 times.",
    "done": true
   },
   {
    "id": 635,
-   "tier": "Medium",
    "name": "Beef vs Beef",
    "wiki": "Beef_vs_Beef",
-   "text": "Kill him with nothing worn and nothing eaten or drunk.",
-   "how": "Drink potions before he spawns; prayers are fine. Take off the cowbell amulet too (the wiki doesn't say if it counts).",
+   "tier": "Medium",
+   "type": "Perfection",
+   "task": "Kill Brutus whilst neither equipping nor consuming anything.",
    "done": true
   },
   {
    "id": 636,
-   "tier": "Hard",
    "name": "Smarter than a Cow",
    "wiki": "Smarter_than_a_Cow",
-   "text": "Kill him without any successful attack on you, even a 0.",
-   "how": "Trough safespot with the blowpipe. Move and re-safespot on *growls* or *huff*.",
-   "done": false
+   "tier": "Hard",
+   "type": "Mechanical",
+   "task": "Kill Brutus without being attacked.",
+   "done": true
   },
   {
    "id": 634,
-   "tier": "Elite",
    "name": "Brutus Speed-Trialist",
    "wiki": "Brutus_Speed-Trialist",
-   "text": "Kill him within 2 seconds of his spawn, so you need a one-hit.",
-   "how": "Dragon halberd spec (you have it). Kill him once first, then spec as he spawns. Also completes Smarter than a Cow.",
-   "done": false
+   "tier": "Elite",
+   "type": "Speed",
+   "task": "Kill Brutus in less than 2 seconds.",
+   "done": true
   }
- ]
-}
-</script>
-
-<script id="main">
-(() => {
+ ],
+ "casOpen": 0,
+ "casOpenPoints": 0,
+ "drops": [
+  {
+   "item": "Iron platelegs",
+   "wiki": "Iron_platelegs",
+   "rarity": "1/81",
+   "quantity": "1",
+   "rate": 0.012345679012345678
+  },
+  {
+   "item": "Iron plateskirt",
+   "wiki": "Iron_plateskirt",
+   "rarity": "1/81",
+   "quantity": "1",
+   "rate": 0.012345679012345678
+  },
+  {
+   "item": "Iron full helm",
+   "wiki": "Iron_full_helm",
+   "rarity": "1/40.5",
+   "quantity": "1",
+   "rate": 0.024691358024691357
+  },
+  {
+   "item": "Iron platebody",
+   "wiki": "Iron_platebody",
+   "rarity": "1/40.5",
+   "quantity": "1",
+   "rate": 0.024691358024691357
+  },
+  {
+   "item": "Chaos rune",
+   "wiki": "Chaos_rune",
+   "rarity": "1/40.5",
+   "quantity": "12",
+   "rate": 0.024691358024691357
+  },
+  {
+   "item": "Clue scroll (easy)",
+   "wiki": "Clue_scroll_(easy)",
+   "rarity": "1/40",
+   "quantity": "1",
+   "rate": 0.025
+  },
+  {
+   "item": "Acorn",
+   "wiki": "Acorn",
+   "rarity": "1/16.2",
+   "quantity": "2",
+   "rate": 0.06172839506172839
+  },
+  {
+   "item": "Oak logs",
+   "wiki": "Oak_logs",
+   "rarity": "1/16.2",
+   "quantity": "2",
+   "rate": 0.06172839506172839
+  },
+  {
+   "item": "Logs",
+   "wiki": "Logs",
+   "rarity": "1/16.2",
+   "quantity": "2",
+   "rate": 0.06172839506172839
+  },
+  {
+   "item": "Coins",
+   "wiki": "Coins",
+   "rarity": "1/16.2",
+   "quantity": "80–100",
+   "rate": 0.06172839506172839
+  },
+  {
+   "item": "Coins",
+   "wiki": "Coins",
+   "rarity": "1/16.2",
+   "quantity": "100–120",
+   "rate": 0.06172839506172839
+  },
+  {
+   "item": "Clue scroll (beginner)",
+   "wiki": "Clue_scroll_(beginner)",
+   "rarity": "1/15",
+   "quantity": "1",
+   "rate": 0.06666666666666667
+  },
+  {
+   "item": "Mind rune",
+   "wiki": "Mind_rune",
+   "rarity": "1/10.1",
+   "quantity": "18",
+   "rate": 0.09876543209876543
+  },
+  {
+   "item": "Iron arrow",
+   "wiki": "Iron_arrow",
+   "rarity": "1/8.1",
+   "quantity": "14",
+   "rate": 0.12345679012345678
+  },
+  {
+   "item": "Air rune",
+   "wiki": "Air_rune",
+   "rarity": "1/8.1",
+   "quantity": "29",
+   "rate": 0.12345679012345678
+  },
+  {
+   "item": "Potato seed",
+   "wiki": "Potato_seed",
+   "rarity": "1/8.1",
+   "quantity": "3",
+   "rate": 0.12345679012345678
+  },
+  {
+   "item": "Raw t-bone steak",
+   "wiki": "Raw_t-bone_steak",
+   "rarity": "1/8.1",
+   "quantity": "3 (noted)",
+   "rate": 0.12345679012345678
+  },
+  {
+   "item": "Cowhide",
+   "wiki": "Cowhide",
+   "rarity": "1/8.1",
+   "quantity": "1",
+   "rate": 0.12345679012345678
+  },
+  {
+   "item": "Coins",
+   "wiki": "Coins",
+   "rarity": "1/5.4",
+   "quantity": "60–80",
+   "rate": 0.18518518518518517
+  },
+  {
+   "item": "Bull bones",
+   "wiki": "Bull_bones",
+   "rarity": "Always",
+   "quantity": "1",
+   "rate": null
+  },
+  {
+   "item": "Raw t-bone steak",
+   "wiki": "Raw_t-bone_steak",
+   "rarity": "Always",
+   "quantity": "1",
+   "rate": null
+  },
+  {
+   "item": "Cow bone",
+   "wiki": "Cow_bone",
+   "rarity": "Always",
+   "quantity": "1",
+   "rate": null
+  }
+ ],
+ "owned": {
+  "Cowbell amulet": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "bank"
+   ],
+   "known": true
+  },
+  "Dragon halberd": {
+   "have": true,
+   "count": 1,
+   "where": [
+    "bank"
+   ],
+   "known": true
+  }
+ },
+ "missing": [],
+ "levels": {
+  "Attack": 94,
+  "Defence": 92,
+  "Strength": 99,
+  "Hitpoints": 99,
+  "Ranged": 91,
+  "Prayer": 79,
+  "Magic": 94,
+  "Cooking": 89,
+  "Woodcutting": 80,
+  "Fletching": 82,
+  "Fishing": 81,
+  "Firemaking": 83,
+  "Crafting": 83,
+  "Smithing": 85,
+  "Mining": 94,
+  "Herblore": 82,
+  "Agility": 76,
+  "Thieving": 76,
+  "Slayer": 86,
+  "Farming": 89,
+  "Runecraft": 73,
+  "Hunter": 79,
+  "Construction": 84,
+  "Sailing": 71
+ },
+ "gear": {
+  "monster": {
+   "id": 15626,
+   "name": "Brutus",
+   "version": "Post-quest",
+   "hp": 58,
+   "otherVersions": [
+    "Charging",
+    "Quest"
+   ]
+  },
+  "prayers": [
+   "Piety",
+   "Eagle Eye",
+   "Mystic Might"
+  ],
+  "potions": [
+   "Super combat",
+   "Super ranging"
+  ],
+  "best": "melee",
+  "results": {
+   "melee": {
+    "dps": 9.816,
+    "secondsPerKill": 5.9,
+    "maxHit": 48,
+    "accuracy": 98.1,
+    "style": "Flick (slash, Accurate)",
+    "spell": null,
+    "equipment": {
+     "head": "Neitiznot faceguard",
+     "cape": "Fire cape [Normal]",
+     "neck": "Amulet of fury",
+     "ammo": "Peaceful blessing",
+     "weapon": "Abyssal whip",
+     "body": "Blood Moon chestplate [New]",
+     "shield": "Dragon defender [Normal]",
+     "legs": "Obsidian platelegs",
+     "hands": "Barrows gloves",
+     "feet": "Dragon boots",
+     "ring": "Berserker ring (i)"
+    },
+    "weight": 21.7,
+    "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoyNDI3MX0sImNhcGUiOnsiaWQiOjY1NzB9LCJuZWNrIjp7ImlkIjo2NTg1fSwiYW1tbyI6eyJpZCI6MjAyMjZ9LCJ3ZWFwb24iOnsiaWQiOjQxNTF9LCJib2R5Ijp7ImlkIjoyOTAyMn0sInNoaWVsZCI6eyJpZCI6MTI5NTR9LCJsZWdzIjp7ImlkIjoyMTMwNH0sImhhbmRzIjp7ImlkIjo3NDYyfSwiZmVldCI6eyJpZCI6MTE4NDB9LCJyaW5nIjp7ImlkIjoxMTc3M319LCJzdHlsZSI6eyJuYW1lIjoiRmxpY2siLCJ0eXBlIjoic2xhc2giLCJzdGFuY2UiOiJBY2N1cmF0ZSJ9LCJzcGVsbCI6bnVsbCwicHJheWVycyI6WzEzXSwic2tpbGxzIjp7ImF0ayI6OTQsImRlZiI6OTIsImhwIjo5OSwibWFnaWMiOjk0LCJwcmF5ZXIiOjc5LCJyYW5nZWQiOjkxLCJzdHIiOjk5LCJtaW5pbmciOjk0LCJoZXJibG9yZSI6ODIsImZhcm1pbmciOjg5fSwiYm9vc3RzIjp7ImF0ayI6MTksImRlZiI6MTgsIm1hZ2ljIjowLCJwcmF5ZXIiOjAsInJhbmdlZCI6MTgsInN0ciI6MTksIm1pbmluZyI6MCwiaGVyYmxvcmUiOjAsImZhcm1pbmciOjAsImhwIjowfSwiYnVmZnMiOnsicG90aW9ucyI6WzE0LDEzXSwib25TbGF5ZXJUYXNrIjpmYWxzZSwiaW5XaWxkZXJuZXNzIjpmYWxzZSwia2FuZGFyaW5EaWFyeSI6dHJ1ZSwiY2hhcmdlU3BlbGwiOmZhbHNlLCJtYXJrT2ZEYXJrbmVzc1NwZWxsIjpmYWxzZSwiZm9yaW50aHJ5U3VyZ2UiOmZhbHNlLCJzb3VscmVhcGVyU3RhY2tzIjo1LCJiYUF0dGFja2VyTGV2ZWwiOjAsImNoaW5jaG9tcGFEaXN0YW5jZSI6NCwidXNpbmdTdW5maXJlUnVuZXMiOmZhbHNlLCJmcmFnbWVudE9mV2luZCI6ZmFsc2UsImZyYWdtZW50T2ZXYXRlciI6ZmFsc2UsImZyYWdtZW50T2ZFYXJ0aCI6ZmFsc2UsImZyYWdtZW50T2ZGaXJlIjpmYWxzZX19"
+   },
+   "ranged": {
+    "dps": 9.325,
+    "secondsPerKill": 6.2,
+    "maxHit": 23,
+    "accuracy": 97,
+    "style": "Rapid (ranged, Rapid)",
+    "spell": null,
+    "equipment": {
+     "head": "Void ranger helm [Normal]",
+     "cape": "Ava's assembler [Normal]",
+     "neck": "Necklace of Fangs",
+     "ammo": "Peaceful blessing",
+     "weapon": "Rosewood blowpipe [Charged] (Rune dart)",
+     "body": "Elite void top [Normal]",
+     "legs": "Elite void robe [Normal]",
+     "hands": "Void knight gloves [Normal]",
+     "feet": "Ranger boots",
+     "ring": "Archers ring (i)"
+    },
+    "weight": 23.1,
+    "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoxMTY2NH0sImNhcGUiOnsiaWQiOjIyMTA5fSwibmVjayI6eyJpZCI6MzQ0MDF9LCJhbW1vIjp7ImlkIjoyMDIyNn0sIndlYXBvbiI6eyJpZCI6MzE1ODMsIml0ZW1WYXJzIjp7ImJsb3dwaXBlRGFydE5hbWUiOiJSdW5lIGRhcnQiLCJibG93cGlwZURhcnRJZCI6ODE3fX0sImJvZHkiOnsiaWQiOjEzMDcyfSwibGVncyI6eyJpZCI6MTMwNzN9LCJoYW5kcyI6eyJpZCI6ODg0Mn0sImZlZXQiOnsiaWQiOjI1Nzd9LCJyaW5nIjp7ImlkIjoxMTc3MX19LCJzdHlsZSI6eyJuYW1lIjoiUmFwaWQiLCJ0eXBlIjoicmFuZ2VkIiwic3RhbmNlIjoiUmFwaWQifSwic3BlbGwiOm51bGwsInByYXllcnMiOlsxMF0sInNraWxscyI6eyJhdGsiOjk0LCJkZWYiOjkyLCJocCI6OTksIm1hZ2ljIjo5NCwicHJheWVyIjo3OSwicmFuZ2VkIjo5MSwic3RyIjo5OSwibWluaW5nIjo5NCwiaGVyYmxvcmUiOjgyLCJmYXJtaW5nIjo4OX0sImJvb3N0cyI6eyJhdGsiOjE5LCJkZWYiOjE4LCJtYWdpYyI6MCwicHJheWVyIjowLCJyYW5nZWQiOjE4LCJzdHIiOjE5LCJtaW5pbmciOjAsImhlcmJsb3JlIjowLCJmYXJtaW5nIjowLCJocCI6MH0sImJ1ZmZzIjp7InBvdGlvbnMiOlsxNCwxM10sIm9uU2xheWVyVGFzayI6ZmFsc2UsImluV2lsZGVybmVzcyI6ZmFsc2UsImthbmRhcmluRGlhcnkiOnRydWUsImNoYXJnZVNwZWxsIjpmYWxzZSwibWFya09mRGFya25lc3NTcGVsbCI6ZmFsc2UsImZvcmludGhyeVN1cmdlIjpmYWxzZSwic291bHJlYXBlclN0YWNrcyI6NSwiYmFBdHRhY2tlckxldmVsIjowLCJjaGluY2hvbXBhRGlzdGFuY2UiOjQsInVzaW5nU3VuZmlyZVJ1bmVzIjpmYWxzZSwiZnJhZ21lbnRPZldpbmQiOmZhbHNlLCJmcmFnbWVudE9mV2F0ZXIiOmZhbHNlLCJmcmFnbWVudE9mRWFydGgiOmZhbHNlLCJmcmFnbWVudE9mRmlyZSI6ZmFsc2V9fQ"
+   },
+   "magic": {
+    "dps": 5.814,
+    "secondsPerKill": 10,
+    "maxHit": 43,
+    "accuracy": 98.1,
+    "style": "Spell (magic, Autocast)",
+    "spell": "Earth Wave",
+    "equipment": {
+     "head": "Void mage helm [Normal]",
+     "cape": "Imbued Saradomin cape [Normal]",
+     "neck": "Elemental amulet",
+     "ammo": "Peaceful blessing",
+     "weapon": "Twinflame staff",
+     "body": "Elite void top [Normal]",
+     "shield": "Book of Darkness",
+     "legs": "Elite void robe [Normal]",
+     "hands": "Void knight gloves [Normal]",
+     "feet": "Infinity boots",
+     "ring": "Lunar ring"
+    },
+    "weight": 20.6,
+    "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoxMTY2M30sImNhcGUiOnsiaWQiOjIxNzkxfSwibmVjayI6eyJpZCI6MzQ0Mjh9LCJhbW1vIjp7ImlkIjoyMDIyNn0sIndlYXBvbiI6eyJpZCI6MzA2MzR9LCJib2R5Ijp7ImlkIjoxMzA3Mn0sInNoaWVsZCI6eyJpZCI6MTI2MTJ9LCJsZWdzIjp7ImlkIjoxMzA3M30sImhhbmRzIjp7ImlkIjo4ODQyfSwiZmVldCI6eyJpZCI6NjkyMH0sInJpbmciOnsiaWQiOjkxMDR9fSwic3R5bGUiOnsibmFtZSI6IlNwZWxsIiwidHlwZSI6Im1hZ2ljIiwic3RhbmNlIjoiQXV0b2Nhc3QifSwic3BlbGwiOiJFYXJ0aCBXYXZlIiwicHJheWVycyI6WzExXSwic2tpbGxzIjp7ImF0ayI6OTQsImRlZiI6OTIsImhwIjo5OSwibWFnaWMiOjk0LCJwcmF5ZXIiOjc5LCJyYW5nZWQiOjkxLCJzdHIiOjk5LCJtaW5pbmciOjk0LCJoZXJibG9yZSI6ODIsImZhcm1pbmciOjg5fSwiYm9vc3RzIjp7ImF0ayI6MTksImRlZiI6MTgsIm1hZ2ljIjowLCJwcmF5ZXIiOjAsInJhbmdlZCI6MTgsInN0ciI6MTksIm1pbmluZyI6MCwiaGVyYmxvcmUiOjAsImZhcm1pbmciOjAsImhwIjowfSwiYnVmZnMiOnsicG90aW9ucyI6WzE0LDEzXSwib25TbGF5ZXJUYXNrIjpmYWxzZSwiaW5XaWxkZXJuZXNzIjpmYWxzZSwia2FuZGFyaW5EaWFyeSI6dHJ1ZSwiY2hhcmdlU3BlbGwiOmZhbHNlLCJtYXJrT2ZEYXJrbmVzc1NwZWxsIjpmYWxzZSwiZm9yaW50aHJ5U3VyZ2UiOmZhbHNlLCJzb3VscmVhcGVyU3RhY2tzIjo1LCJiYUF0dGFja2VyTGV2ZWwiOjAsImNoaW5jaG9tcGFEaXN0YW5jZSI6NCwidXNpbmdTdW5maXJlUnVuZXMiOmZhbHNlLCJmcmFnbWVudE9mV2luZCI6ZmFsc2UsImZyYWdtZW50T2ZXYXRlciI6ZmFsc2UsImZyYWdtZW50T2ZFYXJ0aCI6ZmFsc2UsImZyYWdtZW50T2ZGaXJlIjpmYWxzZX19"
+   }
+  },
+  "warnings": []
+ },
+ "gearRequest": {
+  "monster": "Brutus",
+  "version": "Post-quest",
+  "onSlayerTask": false,
+  "prayers": [
+   "piety",
+   "eagle eye",
+   "mystic might"
+  ],
+  "potions": [
+   "Super combat",
+   "Super ranging"
+  ]
+ },
+ "files": {
+  "progress": "2026-11-22T12:41:28.282918Z",
+  "clog": "2026-11-22T12:41:28.287435800Z",
+  "killcounts": "2026-11-22T12:41:30.943316Z",
+  "containers": "2026-11-22T12:53:59.841922200Z"
+ },
+ "stale": [],
+ "wiseOldMan": {
+  "updatedAt": "2026-11-22T10:08:28.697Z",
+  "stale": false
+ },
+ "warnings": [],
+ "timings": {
+  "wiki": 0.05,
+  "wiseOldMan": 0.17,
+  "dryness": 0.46,
+  "gear": 29.08,
+  "total": 29.1
+ },
+ "at": "2026-11-22T12:56:08.961Z",
+ "gearAt": "2026-11-22T12:56:08.961Z"
+};
   const WIKI = 'https://oldschool.runescape.wiki/w/';
-  const SERVER = 'host:osrs';
-  const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>';
-  let S = JSON.parse(document.getElementById('state').textContent);
-  // served by the optimizer server (localhost:3124/guides/brutus) the page calls its /tools routes; as a Claude
-  // artifact it would call the same tools through the local MCP server, once the app routes `host:` calls to pages
-  const LIVE_URL = 'http://localhost:3124/guides/brutus';
-  const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
-  let mcp = null;
-  let live = isLocal;
+  const LIVE_URL = `http://localhost:3124/guides/${SLUG}`;
+  const live = ['localhost', '127.0.0.1'].includes(location.hostname);
   let busy = false;
   let status = { text: '', err: false };
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const page = (p) => WIKI + encodeURIComponent(String(p).replace(/ /g, '_')).replace(/%2F/g, '/').replace(/%23/g, '#');
   const clean = (s) => String(s || '').replace(/\s*\[[^\]]*\]/g, '').trim();
   const fmtTime = (iso) => { try { return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+  const base = (s) => String(s || '').toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const unesc = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  // mini markup in the guide's text: [[Page]], [[Page|text]], **bold**, {have:Item}
+  const md = (t) => esc(t)
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, (_, p, l) => `<a href="${esc(page(unesc(p)))}">${l}</a>`)
+    .replace(/\[\[([^\]]+)\]\]/g, (_, p) => `<a href="${esc(page(unesc(p)))}">${p}</a>`)
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/\{have:([^}]+)\}/g, (_, n) => {
+      const o = D?.owned?.[unesc(n).trim()];
+      if (!o) return '';
+      return o.have ? '<span class="pill have">you have it</span>' : '<span class="pill miss">not owned</span>';
+    });
+
   const SLOTS = ['head', 'cape', 'neck', 'ammo', 'weapon', 'shield', 'body', 'legs', 'hands', 'feet', 'ring'];
   const STYLE_NAMES = { melee: 'Melee', ranged: 'Ranged', magic: 'Magic' };
+  const KIND = { boss: 'Boss guide', slayer: 'Slayer task', activity: 'Activity guide' };
+  const TIER_ORDER = ['Easy', 'Medium', 'Hard', 'Elite', 'Master', 'Grandmaster'];
 
-  const bestStyle = () => Object.entries(S.gear).filter(([, g]) => g).sort((a, b) => b[1].dps - a[1].dps)[0]?.[0];
-  const weaponLabel = (g) => (g.spell ? `${g.spell}, ${clean(g.equipment.weapon)}` : clean(g.equipment.weapon));
+  const panel = (id, title, note, body) => `<section aria-labelledby="${id}-h">
+      <div class="sh"><h2 id="${id}-h">${esc(title)}</h2>${note ? `<span class="note">${note}</span>` : ''}</div>${body}</section>`;
+  const facts = (rows) => (rows && rows.length ? `<dl class="facts">${rows.map(([l, t]) => `<dt>${esc(l)}</dt><dd>${md(t)}</dd>`).join('')}</dl>` : '');
+  const table = (head, rows, right = []) => `<div class="tbl-wrap"><table>
+      <thead><tr>${head.map((h, i) => `<th${right.includes(i) ? ' class="r"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${right.includes(i) ? ' class="r"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+
+  // a free section from the guide: bullets (items), label/value rows (facts) or a table (head + rows)
+  const section = (s, i) => {
+    let body = '';
+    if (s.items) body += `<ul class="list">${s.items.map((t) => `<li>${md(t)}</li>`).join('')}</ul>`;
+    if (s.facts) body += facts(s.facts);
+    if (s.rows) body += table(s.head || [], s.rows.map((r) => r.map(md)), s.right || []);
+    return panel(`s${i}`, s.title, s.note ? md(s.note) : '', body);
+  };
+
+  const gearPanel = () => {
+    const g = D?.gear;
+    const res = g?.results || {};
+    const best = g?.best;
+    let body = '';
+    if (best && res[best]) {
+      const cards = ['melee', 'ranged', 'magic'].filter((k) => res[k]).map((k) => {
+        const r = res[k];
+        const weapon = r.spell ? `${r.spell}, ${clean(r.equipment.weapon)}` : clean(r.equipment.weapon);
+        return `<div class="style${k === best ? ' best' : ''}">
+          <span class="label">${STYLE_NAMES[k]}${k === best ? ' · best' : ''}</span>
+          <span class="dps num">${r.dps.toFixed(2)}</span>
+          <span class="meta num">${esc(weapon)} · ${r.secondsPerKill}s</span>
+          <a href="${esc(r.calcUrl)}">Open in DPS calc</a></div>`;
+      }).join('');
+      const b = res[best];
+      const stance = /^(.*?) \(([^,]+), ([^)]+)\)$/.exec(b.style || '');
+      const slots = SLOTS.filter((s) => b.equipment[s]).map((s) => {
+        let v = clean(b.equipment[s]);
+        if (s === 'weapon') v += b.spell ? ` (${b.spell})` : (stance ? ` (${stance[1]}, ${stance[3].toLowerCase()})` : '');
+        return `<div class="slot"><span>${s}</span><span>${esc(v)}</span></div>`;
+      }).join('');
+      body += `<div class="styles">${cards}</div><div><h3 style="margin-bottom:8px">${STYLE_NAMES[best]} setup</h3><div class="slots">${slots}</div></div>`;
+    } else if (G.kind !== 'activity') {
+      body += `<p class="note">${live ? 'No gear yet. Press Rerun gear.' : 'No gear in this snapshot.'}</p>`;
+    }
+    body += facts(G.facts);
+    const note = G.gearNote ? md(G.gearNote) : (g ? esc([...(g.prayers || []), ...(g.potions || [])].join(' · ') || 'No prayers or potions') : '');
+    return panel('gear', G.kind === 'activity' ? (G.factsTitle || 'Overview') : 'Gear and inventory', note, body);
+  };
+
+  const mechPanel = () => {
+    const m = G.mechanics;
+    if (!m || !m.items || !m.items.length) return '';
+    const body = `<div class="mech">${m.items.map((x) => `<div class="mech-item">${x.cue ? `<span class="cue">${esc(x.cue)}</span>` : '<span></span>'}<p>${x.title ? `<b>${md(x.title)}</b> ` : ''}${md(x.text)}</p></div>`).join('')}</div>`;
+    return panel('mech', 'Mechanics', m.note ? md(m.note) : '', body);
+  };
+
+  const caPanel = () => {
+    const cas = D?.cas || [];
+    if (!cas.length) return '';
+    const open = cas.filter((c) => !c.done).sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
+    const how = G.caHow || {};
+    const body = open.length ? `<div class="ca">${open.map((c) => `<div class="ca-item">
+        <div class="t"><span class="pill tier">${esc(c.tier)}</span><a href="${esc(page(c.name))}">${esc(c.name)}</a></div>
+        <p>${esc(c.task)}</p>${how[c.id] ? `<p class="how">${md(how[c.id])}</p>` : ''}</div>`).join('')}</div>`
+      : `<p class="done-all">All ${esc(G.title)} Combat Achievements done.</p>`;
+    return panel('ca', 'Combat Achievements', open.length ? `${open.length} left · ${D.casOpenPoints} pts` : '', body);
+  };
+
+  const triviaPanel = () => {
+    const drops = D?.drops || [];
+    const notable = (G.notableDrops || []).map((n) => {
+      if (Array.isArray(n)) return [md(n[0]), esc(n[1])];
+      const byRate = (a, b) => (b.rate ?? 0) - (a.rate ?? 0);
+      const exact = drops.filter((x) => x.item.toLowerCase() === n.toLowerCase()).sort(byRate);
+      const d = exact[0] || drops.filter((x) => base(x.item) === base(n)).sort(byRate)[0];
+      const c = (D?.clog || []).find((x) => x.name.toLowerCase() === n.toLowerCase());
+      return [`<a href="${esc(page(n))}">${esc(n)}</a>`, esc(d ? d.rarity : (c?.rate || '?'))];
+    });
+    const clog = D?.clog || [];
+    const have = clog.filter((c) => c.have).length;
+    const rows = clog.map((c) => [
+      `<a href="${esc(page(c.name))}">${esc(c.name)}</a>${c.pet ? ' (pet)' : ''}`,
+      `<span class="pill ${c.have ? 'have' : 'miss'}">${c.have ? 'Have' : 'Missing'}</span>`,
+      esc(c.rate || '–'),
+      c.have ? '–' : (c.dry == null ? '<span class="note">not in dryness.py</span>'
+        : `${c.dry.toFixed(1)}%<span class="bar" aria-hidden="true"><i style="width:${c.dry}%"></i></span>`),
+    ]);
+    if (!notable.length && !clog.length) return '';
+    const left = notable.length ? `<div><h3 style="margin-bottom:8px">Notable drops</h3>${table(['Drop', 'Rate'], notable, [1])}</div>` : '';
+    const right = clog.length ? `<div><h3 style="margin-bottom:8px">Collection log · ${have} of ${clog.length}</h3>
+        ${table(['Item', 'Status', 'Rate', 'Chance this dry'], rows, [2, 3])}
+        <p class="note" style="margin-top:6px">A high % means being this dry is normal at your kc.</p></div>` : '';
+    return panel('triv', 'Trivia', D?.kc?.value != null ? `${D.kc.value} ${esc(G.kcLabel || 'kc')}` : '',
+      `<div class="trivia"${left && right ? '' : ' style="grid-template-columns:minmax(0,1fr)"'}>${left}${right}</div>`);
+  };
 
   const render = () => {
-    const best = bestStyle();
-    const bg = S.gear[best];
-    const styleCards = ['melee', 'ranged', 'magic'].filter((k) => S.gear[k]).map((k) => {
-      const g = S.gear[k];
-      return `<div class="style${k === best ? ' best' : ''}">
-        <span class="label">${STYLE_NAMES[k]}${k === best ? ' · best' : ''}</span>
-        <span class="dps num">${g.dps.toFixed(2)}</span>
-        <span class="meta num">${esc(weaponLabel(g))} · ${g.secondsPerKill}s</span>
-        <a href="${esc(g.calcUrl)}">Open in DPS calc</a></div>`;
-    }).join('');
-    const stance = /\(([^,]+), ([^)]+)\)/.exec(bg.style || '');
-    const slotRows = SLOTS.filter((s) => bg.equipment[s]).map((s) => {
-      let v = clean(bg.equipment[s]);
-      if (s === 'weapon' && stance && !bg.spell) v += ` (${bg.style.split(' (')[0]}, ${stance[2].toLowerCase()})`;
-      if (s === 'weapon' && bg.spell) v += ` (${bg.spell})`;
-      return `<div class="slot"><span>${s}</span><span>${esc(v)}</span></div>`;
-    }).join('');
-
-    const open = S.cas.filter((c) => !c.done);
-    const tierPts = { Easy: 1, Medium: 2, Hard: 3, Elite: 4, Master: 5, Grandmaster: 6 };
-    const pts = open.reduce((n, c) => n + (tierPts[c.tier] || 0), 0);
-    const caHtml = open.length ? open.map((c) => `<div class="ca-item">
-        <div class="t"><span class="pill tier">${esc(c.tier)}</span><a href="${WIKI}${c.wiki}">${esc(c.name)}</a></div>
-        <p>${esc(c.text)}</p>${c.how ? `<p class="how">${esc(c.how)}</p>` : ''}</div>`).join('')
-      : '<p class="done-all">All Brutus Combat Achievements done.</p>';
-
-    const have = S.clog.filter((c) => c.count > 0).length;
-    const clogRows = S.clog.map((c) => {
-      const got = c.count > 0;
-      const dry = got ? '–' : (c.dry == null ? '<span class="note">not in dryness.py</span>'
-        : `${c.dry.toFixed(1)}%<span class="bar" aria-hidden="true"><i style="width:${c.dry}%"></i></span>`);
-      return `<tr><td><a href="${WIKI}${c.wiki}">${esc(c.name)}</a>${esc(c.suffix || '')}</td>
-        <td><span class="pill ${got ? 'have' : 'miss'}">${got ? 'Have' : 'Missing'}</span></td>
-        <td class="r">${esc(c.rate)}</td><td class="r">${dry}</td></tr>`;
-    }).join('');
-
-    const staleNote = S.stale && S.stale.length ? ` <span style="color:var(--bad)">· ${esc(S.stale.join(', '))} over a day old, press Export</span>` : '';
+    const sec = (col) => (G.sections || []).map((s, i) => ((s.column || 'left') === col ? section(s, i) : '')).join('');
+    const stats = (G.stats || []).map(([l, v]) => `<div class="stat"><span class="label">${esc(l)}</span><b class="num">${esc(v)}</b></div>`).join('');
+    const kc = D?.kc?.value;
+    const missing = (D?.missing || []).map((m) => (m.type === 'quest' ? `<a href="${esc(page(m.name))}">${esc(m.name)}</a>` : `${esc(m.need)} ${esc(m.name)} (you have ${esc(m.have)})`));
+    const stale = D?.stale?.length ? ` <span style="color:var(--bad)">· ${esc(D.stale.join(', '))} over a day old, press Export</span>` : '';
+    const womStale = D?.wiseOldMan?.stale ? ' · <a href="https://wiseoldman.net/players/gim%20fasd">Wise Old Man</a> is a few days old, update it' : '';
+    const right = `${mechPanel()}${caPanel()}${sec('right')}`;
+    const button = D?.gearRequest || G.data?.monster ? 'Rerun gear' : 'Refresh';
 
     document.getElementById('app').innerHTML = `
   <div class="top">
     <div>
-      <div class="label">Boss guide · off task · GIM Fasd</div>
-      <h1><a href="${WIKI}Brutus" style="color:inherit;text-decoration:none">Brutus</a></h1>
-      <div class="sub">Lumbridge cow field, NE corner · <span class="num">${S.kills}</span> kc</div>
+      <div class="label">${esc(G.kicker || KIND[G.kind] || KIND.boss)}${D?.player ? ` · ${esc(D.player)}` : ''}</div>
+      <h1><a href="${esc(page(G.wiki || G.title))}" style="color:inherit;text-decoration:none">${esc(G.title)}</a></h1>
+      <div class="sub">${md(G.subtitle || '')}${kc != null ? `${G.subtitle ? ' · ' : ''}<span class="num">${kc}</span> ${esc(G.kcLabel || 'kc')}` : ''}</div>
     </div>
     <div class="right">
-      <div class="stats" aria-label="Boss stats">
-        <div class="stat"><span class="label">HP</span><b class="num">58</b></div>
-        <div class="stat"><span class="label">Attack</span><b>Crush</b></div>
-        <div class="stat"><span class="label">Speed</span><b class="num">5t</b></div>
-        <div class="stat"><span class="label">Max hit</span><b class="num">3 / 19</b></div>
-        <div class="stat"><span class="label">Respawn</span><b class="num">13t</b></div>
-        <div class="stat"><span class="label">Weak</span><b>Earth</b></div>
-      </div>
+      ${stats ? `<div class="stats" aria-label="Stats">${stats}</div>` : ''}
       <div class="refresh">
-        <span class="status${status.err ? ' err' : ''}" role="status">${esc(status.text || `Saved ${fmtTime(S.savedAt)}`)}</span>
-        ${live ? `<button id="refreshBtn" type="button" ${busy ? 'disabled' : ''}>${busy ? 'Refreshing…' : 'Rerun gear'}</button>`
-    : `<a href="${LIVE_URL}">Open live page</a>`}
+        <span class="status${status.err ? ' err' : ''}" role="status">${esc(status.text || (D ? `Saved ${fmtTime(D.at)}` : 'No data yet'))}</span>
+        ${live ? `<button id="refreshBtn" type="button" ${busy ? 'disabled' : ''}>${busy ? 'Refreshing…' : button}</button>` : `<a href="${LIVE_URL}">Open live page</a>`}
       </div>
     </div>
   </div>
-
-  <div class="board">
-    <div class="col">
-      <section aria-labelledby="gear-h">
-        <div class="sh"><h2 id="gear-h">Gear and inventory</h2><span class="note">Piety · super combat + super ranging</span></div>
-        <div class="styles">${styleCards}</div>
-        <div>
-          <h3 style="margin-bottom:8px">${STYLE_NAMES[best]} setup</h3>
-          <div class="slots">${slotRows}</div>        </div>
-        <dl class="facts">
-          <dt>Method</dt><dd>Melee from the tile east of his spawn. He never charges into a wall from there.</dd>
-          <dt>Cannonable</dt><dd>❌</dd>
-          <dt>Instanced</dt><dd>✅</dd>
-          <dt>Travel</dt><dd><a href="${WIKI}Cowbell_amulet">Cowbell amulet</a> <span class="pill have">you have it</span></dd>
-          <dt>Prayers</dt><dd>Piety + Protect from Melee. Protection only blocks his basic hit; specials ignore it.</dd>
-          <dt>Inventory</dt><dd>Super combat, a few prayer potions, a little food, air runes, tinderbox (burn his oak logs between kills).</dd>
-          <dt>Safespot</dt><dd>South of the pen between the two troughs, touching the fence. He stomps if you stand only one tile away.</dd>
-        </dl>
-      </section>
-    </div>
-    <div class="col">
-      <section aria-labelledby="mech-h">
-        <div class="sh"><h2 id="mech-h">Mechanics</h2><span class="note">Special every 4–5 hits</span></div>
-        <div class="mech">
-          <div class="mech-item"><span class="cue">*growls*</span><p><b>Charge.</b> 4-tile dash after 3 ticks. Step to the side.</p></div>
-          <div class="mech-item"><span class="cue">*snorts*</span><p><b>Slam.</b> Hits the tiles in front 3 times after 4 ticks. Step back one tile.</p></div>
-          <div class="mech-item"><span class="cue">*huff*</span><p><b>Pathing.</b> Out of range too long, he walks around obstacles to reach you. Re-safespot.</p></div>
-        </div>      </section>
-      <section aria-labelledby="ca-h">
-        <div class="sh"><h2 id="ca-h">Combat Achievements</h2><span class="note">${open.length} left · ${pts} pts</span></div>
-        <div class="ca">${caHtml}</div>
-      </section>
-    </div>
+  ${missing.length ? `<div class="alert"><b>Missing:</b> ${missing.join(', ')}</div>` : ''}
+  <div class="board"${right ? '' : ' style="grid-template-columns:minmax(0,1fr)"'}>
+    <div class="col">${gearPanel()}${sec('left')}</div>
+    ${right ? `<div class="col">${right}</div>` : ''}
   </div>
-
-  <section aria-labelledby="triv-h">
-    <div class="sh"><h2 id="triv-h">Trivia</h2><span class="note num">${S.kills} kc from your loot tracker</span></div>
-    <div class="trivia">
-      <div>
-        <h3 style="margin-bottom:8px">Notable drops</h3>
-        <div class="tbl-wrap"><table>
-          <thead><tr><th>Drop</th><th class="r">Rate</th></tr></thead>
-          <tbody>
-            <tr><td>Clue scroll (beginner)</td><td class="r">1/15</td></tr>
-            <tr><td>Clue scroll (easy)</td><td class="r">1/40</td></tr>
-            <tr><td>Raw t-bone steak, bull bones</td><td class="r">always</td></tr>
-          </tbody>
-        </table></div>
-      </div>
-      <div>
-        <h3 style="margin-bottom:8px">Collection log · ${have} of ${S.clog.length}</h3>
-        <div class="tbl-wrap"><table>
-          <thead><tr><th>Item</th><th>Status</th><th class="r">Rate</th><th class="r">Chance this dry</th></tr></thead>
-          <tbody>${clogRows}</tbody>
-        </table></div>
-        <p class="note" style="margin-top:6px">A high % means being this dry is normal at your kc.</p>
-      </div>
-    </div>
-  </section>
-
-  <footer>Data from your sync files (kills ${esc(fmtTime(S.files.killcounts))}, collection log ${esc(fmtTime(S.files.clog))})${staleNote}. Rates and mechanics from the OSRS Wiki.</footer>`;
-
+  ${sec('full')}
+  ${triviaPanel()}
+  <footer>Data from your sync files${D?.files ? ` (kills ${esc(fmtTime(D.files.killcounts))}, collection log ${esc(fmtTime(D.files.clog))})` : ''}${stale}${womStale}. Rates, tasks and mechanics from the OSRS Wiki.</footer>`;
     const btn = document.getElementById('refreshBtn');
     if (btn) btn.addEventListener('click', () => refresh(true));
   };
 
-  const call = async (tool, args) => {
-    if (isLocal) {
-      const r = await fetch(`/tools/${tool}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(args) });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      return j;
-    }
-    const r = await mcp.callTool(SERVER, tool, args, { cache: false });
-    return r.payload;
-  };
-
-  const applyStatus = (st) => {
-    S.kills = st.kills;
-    S.files = st.updated;
-    S.stale = st.stale || [];
-    for (const c of S.clog) c.count = Math.max(st.clog?.[c.id] || 0, st.drops?.[c.id] || 0);
-    for (const c of S.cas) c.done = !!st.ca?.[c.id];
-  };
-  const applyDryness = (d) => {
-    for (const c of S.clog) {
-      const hit = d.items.find((i) => i.name.toLowerCase() === (c.match || c.name).toLowerCase());
-      c.dry = hit && hit.missing && hit.kind === 'dry' ? hit.chance : null;
-    }
-  };
-
-  const regenerate = () => {
-    const title = document.querySelector('title').outerHTML;
-    const meta = document.querySelector('meta[name="claude:viewport-fit-sides"]').outerHTML;
-    const font = document.querySelector('link[rel="stylesheet"]').outerHTML;
-    const style = `<style>${document.querySelector('style:not(head style)')?.textContent || ''}</style>`;
-    const state = JSON.stringify(S, null, 1).replace(/</g, '\\u003c');
-    const main = document.getElementById('main').textContent;
-    return `${SKELETON}\n${title}\n${meta}\n${font}\n${style}\n\n<div class="wrap" id="app"></div>\n\n<script type="application/json" id="state">\n${state}\n<\/script>\n\n<script id="main">${main}<\/script>\n</body></html>`;
-  };
-
-  const snapshot = () => JSON.stringify({ ...S, savedAt: null });
-
   const refresh = async (full, auto = false) => {
     if (!live || busy) return;
     busy = true;
-    const before = snapshot();
-    if (!auto || full) {
-      status = { text: full ? 'Reading sync files and running the optimizer (about 30s)…' : 'Updating kc and dryness…', err: false };
-      render();
-    }
-    const errors = [];
+    const before = JSON.stringify({ ...D, at: null, timings: null });
+    if (!auto) { status = { text: full ? 'Reading sync files and running the optimizer…' : 'Updating…', err: false }; render(); }
     try {
-      const ids = S.clog.map((c) => c.id);
-      const [st, dr] = await Promise.allSettled([
-        call('boss_status', { npc: 'Brutus', items: ids, caIds: S.cas.map((c) => c.id) }),
-        call('dryness', { filter: 'brutus' }),
-      ]);
-      if (st.status === 'rejected' && dr.status === 'rejected' && st.reason?.code === 'server_not_connected') {
-        busy = false;
-        live = false;
-        mcp = null;
-        status = { text: '', err: false };
-        render();
-        return;
-      }
-      if (st.status === 'fulfilled') applyStatus(st.value); else errors.push(`status: ${st.reason?.message || st.reason?.code}`);
-      if (dr.status === 'fulfilled') applyDryness(dr.value); else errors.push(`dryness: ${dr.reason?.message || dr.reason?.code}`);
-      if (full) {
-        try {
-          const o = await call('optimize', S.optimizer);
-          for (const k of ['melee', 'ranged', 'magic']) {
-            const r = o.results?.[k]?.[0];
-            if (r) S.gear[k] = { dps: r.dps, secondsPerKill: r.secondsPerKill, style: r.style, spell: r.spell, calcUrl: r.calcUrl, equipment: r.equipment };
-          }
-          S.gearAt = new Date().toISOString();
-        } catch (e) { errors.push(`optimizer: ${e?.message || e?.code}`); }
-      }
-      S.savedAt = new Date().toISOString();
-      const prefix = isLocal ? 'Live · ' : '';
-      if (errors.length) status = { text: `Partly updated. ${errors.join('; ')}`, err: true };
-      else status = { text: `${prefix}updated ${fmtTime(S.savedAt)}`, err: false };
+      const r = await fetch(`/guide-data?guide=${SLUG}${full ? '' : '&gear=0'}`, { cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      D = j;
       busy = false;
+      status = j.warnings?.length ? { text: `Updated with warnings: ${j.warnings.join('; ')}`, err: true } : { text: `Live · updated ${fmtTime(j.at)}`, err: false };
       // auto refreshes that changed nothing only touch the status line, so scrolling and selection aren't disturbed
-      const statusEl = document.querySelector('.refresh .status');
-      if (auto && !full && !errors.length && snapshot() === before && statusEl) {
-        statusEl.textContent = status.text;
-        statusEl.classList.remove('err');
+      const el = document.querySelector('.refresh .status');
+      if (auto && el && JSON.stringify({ ...D, at: null, timings: null }) === before) {
+        el.textContent = status.text;
+        el.classList.toggle('err', status.err);
         return;
       }
       render();
-      if (full && !isLocal) {
-        try {
-          const art = await window.claude.use('artifact');
-          if (art) { await art.publish(regenerate()); }
-        } catch (e) {
-          if (e?.code !== 'conflict') { status = { text: `${status.text} (not saved: ${e?.code || e})`, err: true }; render(); }
-        }
-      }
     } catch (e) {
       busy = false;
-      status = { text: `Refresh failed: ${e?.message || e?.code || e}`, err: true };
+      status = { text: `Refresh failed: ${e?.message || e}`, err: true };
       render();
     }
   };
 
-  // the live page refreshes kc, clog, dryness and CAs every 30s while the tab is visible; gear only reruns from the button
-  const STATUS_EVERY = 30 * 1000;
-  const tick = () => { if (live && !document.hidden) refresh(false, true); };
-
   render();
-  if (isLocal) {
+  if (live) {
+    // kc, collection log, dryness and CAs every 30s while the tab is visible; gear only from the button
+    const tick = () => { if (!document.hidden) refresh(false, true); };
     tick();
-    setInterval(tick, STATUS_EVERY);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
-  } else {
-    (async () => {
-      try { mcp = await window.claude?.use('mcp'); } catch { mcp = null; }
-      if (!mcp) return;
-      live = true;
-      render();
-      refresh(false);
-    })();
+    setInterval(tick, 30 * 1000);
+    document.addEventListener('visibilitychange', tick);
   }
 })();
 </script>

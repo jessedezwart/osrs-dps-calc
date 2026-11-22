@@ -5,6 +5,7 @@
  *   GET  /health             - status, and the synced account it found
  *   GET  /monsters?name=...  - monsters whose name contains the text (with their versions)
  *   POST /optimize           - the best setups per style (see OptimizeRequest in optimize.ts)
+ *   GET  /guide-data, /guides/ - the guides (see guides.ts)
  *   GET  /osrs-dps/...       - the calculator itself (the static build in out/), which results' calcUrl links open
  *
  * Start it with `node src/server/start.js` (env: PORT, default 3124; OSRS_SYNC_DIR; OSRS_PLAYER).
@@ -19,7 +20,10 @@ import {
   OptimizeRequest, prepare, RequestError, searchMonsters,
 } from './optimize';
 import type { StyleJob } from './styleWorker';
-import { handleGuides, isGuideRoute } from './guides';
+import { handleGuides, isGuideRoute, Optimize } from './guides';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+const { startWeeklyRefresh } = require('./wikiCache') as { startWeeklyRefresh: () => void };
 
 const PORT = Number(process.env.PORT || 3124);
 const SYNC_DIR = process.env.OSRS_SYNC_DIR || DEFAULT_SYNC_DIR;
@@ -105,7 +109,6 @@ const runStyle = (style: OptimizerStyle, req: OptimizeRequest, account: AccountD
   },
 );
 
-// requests run one at a time, as each already uses a thread per style
 let queue: Promise<unknown> = Promise.resolve();
 
 const loadAccount = (player?: string): { account: AccountData | null, error?: string } => {
@@ -116,7 +119,7 @@ const loadAccount = (player?: string): { account: AccountData | null, error?: st
   }
 };
 
-const optimize = async (req: OptimizeRequest & { player?: string }) => {
+const optimizeNow = async (req: OptimizeRequest & { player?: string }) => {
   const { account, error } = loadAccount(req.player);
   const warnings = [...(account?.warnings ?? [])];
   if (error) warnings.push(`Couldn't read the synced account: ${error}`);
@@ -137,6 +140,13 @@ const optimize = async (req: OptimizeRequest & { player?: string }) => {
     searchSeconds: Number(((Date.now() - started) / 1000).toFixed(1)),
     evaluations: replies.reduce((n, r) => n + (r.evaluations ?? 0), 0),
   };
+};
+
+// requests run one at a time, as each already uses a thread per style
+const optimize = (body: OptimizeRequest & { player?: string }) => {
+  const run = queue.then(() => optimizeNow(body));
+  queue = run.catch(() => undefined);
+  return run;
 };
 
 const send = (res: http.ServerResponse, status: number, body: unknown) => {
@@ -177,13 +187,11 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         throw new RequestError(e instanceof RequestError ? e.message : 'The body must be JSON');
       }
-      const run = queue.then(() => optimize(body));
-      queue = run.catch(() => undefined);
-      send(res, 200, await run);
+      send(res, 200, await optimize(body));
     } else if (req.method === 'GET' && (url.pathname === CALC_BASE || url.pathname.startsWith(`${CALC_BASE}/`))) {
       serveCalc(url.pathname, res);
     } else if (isGuideRoute(url.pathname)) {
-      await handleGuides(req, res, url);
+      await handleGuides(req, res, url, optimize as unknown as Optimize);
     } else {
       send(res, 404, { error: 'Use GET /health, GET /monsters?name=..., POST /optimize, or GET /osrs-dps/' });
     }
@@ -195,6 +203,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 OPTIMIZER_STYLES.forEach(startWorker);
+startWeeklyRefresh();
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Gear optimizer server running at http://localhost:${PORT} (sync folder: ${SYNC_DIR})`);
 });

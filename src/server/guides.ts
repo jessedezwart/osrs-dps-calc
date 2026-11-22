@@ -3,7 +3,10 @@
  *   GET  /guides/            - the list of guides
  *   GET  /guides/<name>      - src/server/guides/<name>.html, the same page that is published as a Claude artifact
  *   POST /tools/<name>       - runs a guide tool (see guideTools.js) with the JSON body as its arguments
- * The pages call /tools on load and from their Refresh button, so they always show the latest sync files.
+ *   GET  /guide-data?guide=<name>[&gear=0]  or  POST /guide-data {source, monster, ...}
+ *                            - everything a guide needs in one call (see guideData.js)
+ * Guides with a guides/<name>.json are rendered from guides/_template.html (see guidePage.js) and fetch /guide-data;
+ * older ones are a single guides/<name>.html.
  */
 import fs from 'node:fs';
 import http from 'node:http';
@@ -12,6 +15,17 @@ import path from 'node:path';
 type Tool = { run: (args: Record<string, unknown>) => Promise<unknown> };
 // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
 const { tools } = require('./guideTools') as { tools: Record<string, Tool> };
+
+type GuideDataFn = (input: Record<string, unknown>, opts: { optimize?: Optimize }) => Promise<Record<string, unknown>>;
+export type Optimize = (body: Record<string, unknown>) => Promise<unknown>;
+// eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+const { guideData } = require('./guideData') as { guideData: GuideDataFn };
+// eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+const guidePage = require('./guidePage') as {
+  guideSlugs: () => string[],
+  renderPage: (slug: string) => string,
+  mergeSnapshot: (slug: string, data: Record<string, unknown>) => Record<string, unknown>,
+};
 
 const GUIDES_DIR = path.join(__dirname, 'guides');
 
@@ -42,15 +56,45 @@ const readJson = (req: http.IncomingMessage) => new Promise<Record<string, unkno
 });
 
 export const isGuideRoute = (pathname: string) => pathname === '/guides' || pathname.startsWith('/guides/')
-  || pathname.startsWith('/tools/');
+  || pathname.startsWith('/tools/') || pathname === '/guide-data';
 
-export const handleGuides = async (req: http.IncomingMessage, res: http.ServerResponse, url: URL) => {
+const sameOrigin = (req: http.IncomingMessage) => {
+  const { origin } = req.headers;
+  return !origin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+};
+
+// GET params: guide, source, kind, monster, version, gear (0 to skip), and comma lists clog, items, quests
+const queryInput = (url: URL) => {
+  const input: Record<string, unknown> = {};
+  url.searchParams.forEach((v, k) => {
+    input[k] = ['clog', 'items', 'quests'].includes(k) ? v.split(',').map((x) => x.trim()).filter(Boolean) : v;
+  });
+  return input;
+};
+
+export const handleGuides = async (req: http.IncomingMessage, res: http.ServerResponse, url: URL, optimize?: Optimize) => {
   const { pathname } = url;
+
+  if (pathname === '/guide-data' && (req.method === 'GET' || req.method === 'POST')) {
+    if (!sameOrigin(req)) {
+      json(res, 403, { error: 'Forbidden' });
+      return;
+    }
+    try {
+      const input = req.method === 'POST' ? await readJson(req) : queryInput(url);
+      let data = await guideData(input, { optimize });
+      // a guide's data is kept as its snapshot, so the live page opens with the last gear
+      if (typeof input.guide === 'string') data = guidePage.mergeSnapshot(input.guide, data);
+      json(res, 200, data);
+    } catch (e) {
+      json(res, 500, { error: e instanceof Error ? e.message : `${e}` });
+    }
+    return;
+  }
 
   if (req.method === 'POST' && pathname.startsWith('/tools/')) {
     // only same-origin pages may call the tools (browsers send Origin on cross-site POSTs)
-    const { origin } = req.headers;
-    if (origin && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    if (!sameOrigin(req)) {
       json(res, 403, { error: 'Forbidden' });
       return;
     }
@@ -68,9 +112,9 @@ export const handleGuides = async (req: http.IncomingMessage, res: http.ServerRe
   }
 
   if (req.method === 'GET' && (pathname === '/guides' || pathname === '/guides/')) {
-    const names = fs.existsSync(GUIDES_DIR)
-      ? fs.readdirSync(GUIDES_DIR).filter((f) => f.endsWith('.html')).map((f) => f.slice(0, -5))
-      : [];
+    const names = [...new Set([...guidePage.guideSlugs(), ...(fs.existsSync(GUIDES_DIR)
+      ? fs.readdirSync(GUIDES_DIR).filter((f) => /^[a-z0-9-]+\.html$/.test(f)).map((f) => f.slice(0, -5))
+      : [])])].sort();
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`${SKELETON}<title>Boss guides</title><ul style="font:16px system-ui;padding:24px 40px">${
       names.map((n) => `<li><a href="/guides/${n}">${n}</a></li>`).join('')}</ul></body></html>`);
