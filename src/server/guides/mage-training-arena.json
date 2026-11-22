@@ -1,0 +1,57 @@
+{
+ "kind": "activity",
+ "title": "Mage Training Arena",
+ "kicker": "Minigame guide",
+ "subtitle": "North of the Emir's Arena · four rooms, pizazz points per room",
+ "stats": [["Magic", "94"], ["Laws", "1,874"], ["Natures", "2,834"], ["Cosmics", "457"]],
+ "data": {
+  "source": "Mage Training Arena",
+  "clog": ["Magic Training Arena"],
+  "dryness": false,
+  "dropPage": false,
+  "caMonster": false
+ },
+ "factsTitle": "Setup",
+ "gearNote": "Pizazz points aren't in the sync files; check them in game",
+ "facts": [
+  ["Transportation", "[[Minigame Teleport]] to the arena (unlock it by talking to the [[Entrance Guardian]]), or a [[Ring of dueling]] to the Emir's Arena and run north."],
+  ["Requirements", "None missing. 94 Magic covers every spell; [[Lvl-6 Enchant]] is the one to use (Lvl-7 costs too much)."],
+  ["Required items", "Law, cosmic and nature runes, plus earth and fire for Lvl-6 Enchant (you have 53k and 71k). [[Rune pouch]] {have:Rune pouch}."],
+  ["Gear", "Any staff that covers fire runes for alchemy, and earth for enchanting. [[Bones to Peaches]] is already unlocked, which nearly doubles Graveyard points."],
+  ["XP/hr and AFK", "Alchemist's Playground ~142k, Telekinetic Theatre ~65k. Low AFK in all rooms."]
+ ],
+ "sections": [
+  {
+   "title": "How it works",
+   "column": "right",
+   "items": [
+    "Each room pays its own pizazz points, and every reward costs points from all four rooms.",
+    "**Telekinetic Theatre:** [[Telekinetic Grab]] the statue through a maze. 2 points per maze, 8 bonus every 5 in a row. Usually the slowest room.",
+    "**Creature Graveyard:** turn bones into peaches and deposit them. Dodge the falling bones.",
+    "**Enchanting Chamber:** enchant shapes and deposit the orbs. Points equal the spell level, doubled on dragonstones.",
+    "**Alchemist's Playground:** alch the item worth 30 coins; it moves every minute."
+   ]
+  },
+  {
+   "title": "Strategy",
+   "column": "right",
+   "items": [
+    "**Cosmics are your bottleneck:** 457 cosmics is about 2,700 Enchanting points with Lvl-6 Enchant, under half of the Mage's book's 6,000. Craft cosmics before a long Enchanting session.",
+    "**Natures:** Alchemist's Playground burns ~900 natures an hour. Your 2,834 cover the book's 550 points easily.",
+    "**Telekinetic:** realistically ~240 points an hour, so the Mage's book's 500 takes about 2 hours.",
+    "**Graveyard:** use Bones to Peaches, never Bananas."
+   ]
+  },
+  {
+   "title": "Rewards worth it",
+   "column": "full",
+   "note": "Points: Telekinetic / Graveyard / Enchanting / Alchemist",
+   "head": ["#", "Reward", "Points", "Why"],
+   "rows": [
+    ["1", "[[Mage's book]] {have:Mage's book}", "500 / 500 / 6,000 / 550", "The only real upgrade: the gear optimizer swaps it in for your Book of Darkness (+3% magic DPS)."],
+    ["2", "[[Infinity hat]], [[Infinity top|top]], [[Infinity bottoms|bottoms]], [[Infinity gloves|gloves]]", "1,375 / 1,375 / 13,500 / 1,575", "Collection log only. Your Farseer helm, Blue Moon chestplate and Ahrim's skirt already beat them."],
+    ["3", "[[Beginner wand]] → [[Master wand]]", "480 / 480 / 4,800 / 530", "Collection log only; each wand upgrades the one before. Your Twinflame staff is better."]
+   ]
+  }
+ ]
+}

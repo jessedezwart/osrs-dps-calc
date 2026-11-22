@@ -321,8 +321,8 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
    "name": "Hallowed token",
    "label": "Hallowed token",
    "wiki": "Hallowed_token",
-   "have": false,
-   "count": 0,
+   "have": true,
+   "count": 1,
    "rate": null,
    "dry": null,
    "lucky": null,
@@ -497,7 +497,7 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
    "pet": false
   }
  ],
- "clogHave": 3,
+ "clogHave": 4,
  "cas": [],
  "casOpen": 0,
  "casOpenPoints": 0,
@@ -746,7 +746,7 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
    "have": true,
    "count": 1,
    "where": [
-    "inventory"
+    "bank"
    ],
    "known": true
   },
@@ -766,7 +766,7 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
    "have": true,
    "count": 1,
    "where": [
-    "worn"
+    "bank"
    ],
    "known": true
   }
@@ -802,9 +802,9 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
  "gearRequest": null,
  "files": {
   "progress": "2026-11-22T13:11:34.139732300Z",
-  "clog": "2026-11-22T13:10:37.140954800Z",
+  "clog": "2026-11-22T13:16:32.982562Z",
   "killcounts": "2026-11-22T13:10:39.547118500Z",
-  "containers": "2026-11-22T13:12:11.341685100Z"
+  "containers": "2026-11-22T13:16:38.990732100Z"
  },
  "stale": [],
  "wiseOldMan": {
@@ -815,10 +815,10 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
  "timings": {
   "wiki": 0.01,
   "wiseOldMan": 0,
-  "dryness": 0.42,
-  "total": 0.44
+  "dryness": 0.38,
+  "total": 0.4
  },
- "at": "2026-11-22T13:15:42.523Z"
+ "at": "2026-11-22T13:17:12.490Z"
 };
   const WIKI = 'https://oldschool.runescape.wiki/w/';
   const LIVE_URL = `http://localhost:3124/guides/${SLUG}`;
@@ -939,7 +939,7 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
     const right = clog.length ? `<div><h3 style="margin-bottom:8px">Collection log · ${have} of ${clog.length}</h3>
         ${table(['Item', 'Status', 'Rate', 'Chance this dry'], rows, [2, 3])}
         <p class="note" style="margin-top:6px">A high % means being this dry is normal at your kc.</p></div>` : '';
-    return panel('triv', 'Trivia', D?.kc?.value != null ? `${D.kc.value} ${esc(G.kcLabel || 'kc')}` : '',
+    return panel('triv', 'Trivia', D?.kc?.value ? `${D.kc.value} ${esc(G.kcLabel || 'kc')}` : '',
       `<div class="trivia"${left && right ? '' : ' style="grid-template-columns:minmax(0,1fr)"'}>${left}${right}</div>`);
   };
 
@@ -958,7 +958,7 @@ ul.list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
     <div>
       <div class="label">${esc(G.kicker || KIND[G.kind] || KIND.boss)}${D?.player ? ` · ${esc(D.player)}` : ''}</div>
       <h1><a href="${esc(page(G.wiki || G.title))}" style="color:inherit;text-decoration:none">${esc(G.title)}</a></h1>
-      <div class="sub">${md(G.subtitle || '')}${kc != null ? `${G.subtitle ? ' · ' : ''}<span class="num">${kc}</span> ${esc(G.kcLabel || 'kc')}` : ''}</div>
+      <div class="sub">${md(G.subtitle || '')}${kc ? `${G.subtitle ? ' · ' : ''}<span class="num">${kc}</span> ${esc(G.kcLabel || 'kc')}` : ''}</div>
     </div>
     <div class="right">
       ${stats ? `<div class="stats" aria-label="Stats">${stats}</div>` : ''}
