@@ -19,6 +19,7 @@ import {
   OptimizeRequest, prepare, RequestError, searchMonsters,
 } from './optimize';
 import type { StyleJob } from './styleWorker';
+import { handleGuides, isGuideRoute } from './guides';
 
 const PORT = Number(process.env.PORT || 3124);
 const SYNC_DIR = process.env.OSRS_SYNC_DIR || DEFAULT_SYNC_DIR;
@@ -181,6 +182,8 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, await run);
     } else if (req.method === 'GET' && (url.pathname === CALC_BASE || url.pathname.startsWith(`${CALC_BASE}/`))) {
       serveCalc(url.pathname, res);
+    } else if (isGuideRoute(url.pathname)) {
+      await handleGuides(req, res, url);
     } else {
       send(res, 404, { error: 'Use GET /health, GET /monsters?name=..., POST /optimize, or GET /osrs-dps/' });
     }

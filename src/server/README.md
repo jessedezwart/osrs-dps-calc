@@ -74,3 +74,11 @@ A page declares `capabilities: {mcp: {servers: [{server: "host:osrs", tools: [..
 - `dryness {filter, missingOnly}`: runs `dryness.py` (`OSRS_DRYNESS`, default `~/osrs-tools/dryness.py`) and parses its
   output into items with the % chance to be this dry or lucky.
 - `optimize {monster, version, ...}`: the same body as `POST /optimize`; starts the optimizer server if it isn't running.
+
+## Live boss guides
+
+The server also serves the boss guides live: open http://localhost:3124/guides/ (e.g. `/guides/brutus`). Each page
+(`src/server/guides/<name>.html`) calls `POST /tools/<tool>` on load for the kill count, collection log, combat
+achievements and dryness, and its Refresh all button reruns the optimizer too. The same file is published as the Claude
+artifact; there it shows the last saved snapshot and links to the live page, since Claude pages can't reach local
+tools yet (it would use the MCP server above once they can). The tools live in `guideTools.js`.

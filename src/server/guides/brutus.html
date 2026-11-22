@@ -1,0 +1,529 @@
+<title>Brutus Boss Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: stat strip header with refresh control, then a two-column board: gear (wide) beside mechanics + CAs, trivia full width below */
+:root{
+  --bg:#f3f4ef; --panel:#ffffff; --fg:#1d221c; --muted:#5f6a5c; --line:#dde2d6;
+  --accent:#7a4a24; --accent-soft:#f3e7da;
+  --good:#2f7a3b; --good-soft:#e3f1e3; --bad:#b0412e; --bad-soft:#f7e3de; --warn:#9a6a00; --warn-soft:#f6ecd2;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141812; --panel:#1c211a; --fg:#e7ebe2; --muted:#9aa595; --line:#2e362b;
+  --accent:#d79a63; --accent-soft:#33261b;
+  --good:#7fcf8a; --good-soft:#1f3322; --bad:#f08c78; --bad-soft:#3a221d; --warn:#e6bb55; --warn-soft:#352c16; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141812; --panel:#1c211a; --fg:#e7ebe2; --muted:#9aa595; --line:#2e362b;
+  --accent:#d79a63; --accent-soft:#33261b;
+  --good:#7fcf8a; --good-soft:#1f3322; --bad:#f08c78; --bad-soft:#3a221d; --warn:#e6bb55; --warn-soft:#352c16; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--body)}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:.01em}
+h1{font-size:44px;line-height:1}
+h2{font-size:22px;text-transform:uppercase;letter-spacing:.06em}
+h3{font-size:16px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.num{font-variant-numeric:tabular-nums}
+
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;border-bottom:2px solid var(--fg);padding-bottom:16px}
+.top .sub{color:var(--muted);margin-top:6px}
+.right{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+@media (max-width:640px){.right{align-items:flex-start}}
+.stats{display:flex;flex-wrap:wrap;gap:6px}
+.stat{border:1px solid var(--line);background:var(--panel);padding:6px 10px;border-radius:6px;min-width:70px}
+.stat b{display:block;font-family:var(--mono);font-size:15px;font-weight:500}
+.refresh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.refresh button{font:600 13px var(--body);padding:7px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--panel);cursor:pointer}
+.refresh button:disabled{opacity:.6;cursor:progress}
+.refresh .status{font-size:12px;color:var(--muted)}
+.refresh .status.err{color:var(--bad)}
+
+.board{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.board{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:20px;min-width:0}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.sh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+
+.facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 14px;margin:0}
+.facts dt{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding-top:2px}
+.facts dd{margin:0}
+@media (max-width:480px){.facts{grid-template-columns:minmax(0,1fr)}.facts dd{margin-bottom:6px}}
+
+.styles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.styles{grid-template-columns:minmax(0,1fr)}}
+.style{border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.style.best{border-color:var(--accent);background:var(--accent-soft)}
+.style .dps{font-family:var(--mono);font-size:22px}
+.style .meta{color:var(--muted);font-size:12px}
+.style a{font-size:12px;font-weight:600;margin-top:4px}
+
+.slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--line);border-radius:6px;overflow:hidden}
+@media (max-width:480px){.slots{grid-template-columns:minmax(0,1fr)}}
+.slot{display:flex;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);margin-bottom:-1px}
+.slot:nth-child(odd){border-right:1px solid var(--line)}
+.slot span:first-child{width:58px;flex:none;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding-top:1px}
+.note{font-size:12px;color:var(--muted);margin:0}
+
+.mech{display:flex;flex-direction:column;gap:10px}
+.mech-item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;align-items:start}
+.cue{font-family:var(--mono);font-size:12px;background:var(--warn-soft);color:var(--warn);padding:2px 8px;border-radius:4px;white-space:nowrap}
+.mech-item p{margin:0}
+
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.have{background:var(--good-soft);color:var(--good)}
+.pill.miss{background:var(--bad-soft);color:var(--bad)}
+.pill.tier{background:var(--accent-soft);color:var(--accent)}
+
+.trivia{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:20px}
+@media (max-width:760px){.trivia{grid-template-columns:minmax(0,1fr)}}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;width:80px;display:inline-block;vertical-align:middle;margin-left:8px}
+.bar i{display:block;height:100%;background:var(--good)}
+
+.ca{display:flex;flex-direction:column;gap:12px}
+.ca-item{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:4px}
+.ca-item:first-child{border-top:0;padding-top:0}
+.ca-item .t{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ca-item .t a{font-weight:600}
+.ca-item p{margin:0}
+.ca-item .how{color:var(--muted)}
+.done-all{color:var(--good);font-weight:600}
+footer{font-size:12px;color:var(--muted)}
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script type="application/json" id="state">
+{
+ "savedAt": "2026-11-22T12:31:01.717Z",
+ "kills": 80,
+ "files": {
+  "progress": "2026-11-22T12:30:59.100318700Z",
+  "clog": "2026-11-22T12:29:55.485576300Z",
+  "killcounts": "2026-11-22T12:30:28.482565800Z"
+ },
+ "stale": [],
+ "optimizer": {
+  "monster": "Brutus",
+  "version": "Post-quest",
+  "onSlayerTask": false,
+  "potions": [
+   "Super combat",
+   "Super ranging"
+  ],
+  "prayers": [
+   "piety",
+   "eagle eye",
+   "mystic might"
+  ]
+ },
+ "gear": {
+  "melee": {
+   "dps": 9.816,
+   "secondsPerKill": 5.9,
+   "style": "Flick (slash, Accurate)",
+   "spell": null,
+   "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoyNDI3MX0sImNhcGUiOnsiaWQiOjY1NzB9LCJuZWNrIjp7ImlkIjo2NTg1fSwiYW1tbyI6eyJpZCI6MjAyMjZ9LCJ3ZWFwb24iOnsiaWQiOjQxNTF9LCJib2R5Ijp7ImlkIjoyOTAyMn0sInNoaWVsZCI6eyJpZCI6MTI5NTR9LCJsZWdzIjp7ImlkIjoyMTMwNH0sImhhbmRzIjp7ImlkIjo3NDYyfSwiZmVldCI6eyJpZCI6MTE4NDB9LCJyaW5nIjp7ImlkIjoxMTc3M319LCJzdHlsZSI6eyJuYW1lIjoiRmxpY2siLCJ0eXBlIjoic2xhc2giLCJzdGFuY2UiOiJBY2N1cmF0ZSJ9LCJzcGVsbCI6bnVsbCwicHJheWVycyI6WzEzXSwic2tpbGxzIjp7ImF0ayI6OTQsImRlZiI6OTIsImhwIjo5OSwibWFnaWMiOjk0LCJwcmF5ZXIiOjc5LCJyYW5nZWQiOjkxLCJzdHIiOjk5LCJtaW5pbmciOjk0LCJoZXJibG9yZSI6ODIsImZhcm1pbmciOjg5fSwiYm9vc3RzIjp7ImF0ayI6MTksImRlZiI6MTgsIm1hZ2ljIjowLCJwcmF5ZXIiOjAsInJhbmdlZCI6MTgsInN0ciI6MTksIm1pbmluZyI6MCwiaGVyYmxvcmUiOjAsImZhcm1pbmciOjAsImhwIjowfSwiYnVmZnMiOnsicG90aW9ucyI6WzE0LDEzXSwib25TbGF5ZXJUYXNrIjpmYWxzZSwiaW5XaWxkZXJuZXNzIjpmYWxzZSwia2FuZGFyaW5EaWFyeSI6dHJ1ZSwiY2hhcmdlU3BlbGwiOmZhbHNlLCJtYXJrT2ZEYXJrbmVzc1NwZWxsIjpmYWxzZSwiZm9yaW50aHJ5U3VyZ2UiOmZhbHNlLCJzb3VscmVhcGVyU3RhY2tzIjo1LCJiYUF0dGFja2VyTGV2ZWwiOjAsImNoaW5jaG9tcGFEaXN0YW5jZSI6NCwidXNpbmdTdW5maXJlUnVuZXMiOmZhbHNlLCJmcmFnbWVudE9mV2luZCI6ZmFsc2UsImZyYWdtZW50T2ZXYXRlciI6ZmFsc2UsImZyYWdtZW50T2ZFYXJ0aCI6ZmFsc2UsImZyYWdtZW50T2ZGaXJlIjpmYWxzZX19",
+   "equipment": {
+    "head": "Neitiznot faceguard",
+    "cape": "Fire cape [Normal]",
+    "neck": "Amulet of fury",
+    "ammo": "Peaceful blessing",
+    "weapon": "Abyssal whip",
+    "body": "Blood Moon chestplate [New]",
+    "shield": "Dragon defender [Normal]",
+    "legs": "Obsidian platelegs",
+    "hands": "Barrows gloves",
+    "feet": "Dragon boots",
+    "ring": "Berserker ring (i)"
+   }
+  },
+  "ranged": {
+   "dps": 9.325,
+   "secondsPerKill": 6.2,
+   "style": "Rapid (ranged, Rapid)",
+   "spell": null,
+   "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoxMTY2NH0sImNhcGUiOnsiaWQiOjIyMTA5fSwibmVjayI6eyJpZCI6MzQ0MDF9LCJhbW1vIjp7ImlkIjoyMDIyNn0sIndlYXBvbiI6eyJpZCI6MzE1ODMsIml0ZW1WYXJzIjp7ImJsb3dwaXBlRGFydE5hbWUiOiJSdW5lIGRhcnQiLCJibG93cGlwZURhcnRJZCI6ODE3fX0sImJvZHkiOnsiaWQiOjEzMDcyfSwibGVncyI6eyJpZCI6MTMwNzN9LCJoYW5kcyI6eyJpZCI6ODg0Mn0sImZlZXQiOnsiaWQiOjI1Nzd9LCJyaW5nIjp7ImlkIjoxMTc3MX19LCJzdHlsZSI6eyJuYW1lIjoiUmFwaWQiLCJ0eXBlIjoicmFuZ2VkIiwic3RhbmNlIjoiUmFwaWQifSwic3BlbGwiOm51bGwsInByYXllcnMiOlsxMF0sInNraWxscyI6eyJhdGsiOjk0LCJkZWYiOjkyLCJocCI6OTksIm1hZ2ljIjo5NCwicHJheWVyIjo3OSwicmFuZ2VkIjo5MSwic3RyIjo5OSwibWluaW5nIjo5NCwiaGVyYmxvcmUiOjgyLCJmYXJtaW5nIjo4OX0sImJvb3N0cyI6eyJhdGsiOjE5LCJkZWYiOjE4LCJtYWdpYyI6MCwicHJheWVyIjowLCJyYW5nZWQiOjE4LCJzdHIiOjE5LCJtaW5pbmciOjAsImhlcmJsb3JlIjowLCJmYXJtaW5nIjowLCJocCI6MH0sImJ1ZmZzIjp7InBvdGlvbnMiOlsxNCwxM10sIm9uU2xheWVyVGFzayI6ZmFsc2UsImluV2lsZGVybmVzcyI6ZmFsc2UsImthbmRhcmluRGlhcnkiOnRydWUsImNoYXJnZVNwZWxsIjpmYWxzZSwibWFya09mRGFya25lc3NTcGVsbCI6ZmFsc2UsImZvcmludGhyeVN1cmdlIjpmYWxzZSwic291bHJlYXBlclN0YWNrcyI6NSwiYmFBdHRhY2tlckxldmVsIjowLCJjaGluY2hvbXBhRGlzdGFuY2UiOjQsInVzaW5nU3VuZmlyZVJ1bmVzIjpmYWxzZSwiZnJhZ21lbnRPZldpbmQiOmZhbHNlLCJmcmFnbWVudE9mV2F0ZXIiOmZhbHNlLCJmcmFnbWVudE9mRWFydGgiOmZhbHNlLCJmcmFnbWVudE9mRmlyZSI6ZmFsc2V9fQ",
+   "equipment": {
+    "head": "Void ranger helm [Normal]",
+    "cape": "Ava's assembler [Normal]",
+    "neck": "Necklace of Fangs",
+    "ammo": "Peaceful blessing",
+    "weapon": "Rosewood blowpipe [Charged] (Rune dart)",
+    "body": "Elite void top [Normal]",
+    "legs": "Elite void robe [Normal]",
+    "hands": "Void knight gloves [Normal]",
+    "feet": "Ranger boots",
+    "ring": "Archers ring (i)"
+   }
+  },
+  "magic": {
+   "dps": 5.814,
+   "secondsPerKill": 10,
+   "style": "Spell (magic, Autocast)",
+   "spell": "Earth Wave",
+   "calcUrl": "http://localhost:3124/osrs-dps/?setup=eyJ2IjoxLCJtb25zdGVyIjp7ImlkIjoxNTYyNn0sImVxdWlwbWVudCI6eyJoZWFkIjp7ImlkIjoxMTY2M30sImNhcGUiOnsiaWQiOjIxNzkxfSwibmVjayI6eyJpZCI6MzQ0Mjh9LCJhbW1vIjp7ImlkIjoyMDIyNn0sIndlYXBvbiI6eyJpZCI6MzA2MzR9LCJib2R5Ijp7ImlkIjoxMzA3Mn0sInNoaWVsZCI6eyJpZCI6MTI2MTJ9LCJsZWdzIjp7ImlkIjoxMzA3M30sImhhbmRzIjp7ImlkIjo4ODQyfSwiZmVldCI6eyJpZCI6NjkyMH0sInJpbmciOnsiaWQiOjkxMDR9fSwic3R5bGUiOnsibmFtZSI6IlNwZWxsIiwidHlwZSI6Im1hZ2ljIiwic3RhbmNlIjoiQXV0b2Nhc3QifSwic3BlbGwiOiJFYXJ0aCBXYXZlIiwicHJheWVycyI6WzExXSwic2tpbGxzIjp7ImF0ayI6OTQsImRlZiI6OTIsImhwIjo5OSwibWFnaWMiOjk0LCJwcmF5ZXIiOjc5LCJyYW5nZWQiOjkxLCJzdHIiOjk5LCJtaW5pbmciOjk0LCJoZXJibG9yZSI6ODIsImZhcm1pbmciOjg5fSwiYm9vc3RzIjp7ImF0ayI6MTksImRlZiI6MTgsIm1hZ2ljIjowLCJwcmF5ZXIiOjAsInJhbmdlZCI6MTgsInN0ciI6MTksIm1pbmluZyI6MCwiaGVyYmxvcmUiOjAsImZhcm1pbmciOjAsImhwIjowfSwiYnVmZnMiOnsicG90aW9ucyI6WzE0LDEzXSwib25TbGF5ZXJUYXNrIjpmYWxzZSwiaW5XaWxkZXJuZXNzIjpmYWxzZSwia2FuZGFyaW5EaWFyeSI6dHJ1ZSwiY2hhcmdlU3BlbGwiOmZhbHNlLCJtYXJrT2ZEYXJrbmVzc1NwZWxsIjpmYWxzZSwiZm9yaW50aHJ5U3VyZ2UiOmZhbHNlLCJzb3VscmVhcGVyU3RhY2tzIjo1LCJiYUF0dGFja2VyTGV2ZWwiOjAsImNoaW5jaG9tcGFEaXN0YW5jZSI6NCwidXNpbmdTdW5maXJlUnVuZXMiOmZhbHNlLCJmcmFnbWVudE9mV2luZCI6ZmFsc2UsImZyYWdtZW50T2ZXYXRlciI6ZmFsc2UsImZyYWdtZW50T2ZFYXJ0aCI6ZmFsc2UsImZyYWdtZW50T2ZGaXJlIjpmYWxzZX19",
+   "equipment": {
+    "head": "Void mage helm [Normal]",
+    "cape": "Imbued Saradomin cape [Normal]",
+    "neck": "Elemental amulet",
+    "ammo": "Peaceful blessing",
+    "weapon": "Twinflame staff",
+    "body": "Elite void top [Normal]",
+    "shield": "Book of Darkness",
+    "legs": "Elite void robe [Normal]",
+    "hands": "Void knight gloves [Normal]",
+    "feet": "Infinity boots",
+    "ring": "Lunar ring"
+   }
+  }
+ },
+ "clog": [
+  {
+   "id": 33101,
+   "name": "Mooleta",
+   "wiki": "Mooleta",
+   "rate": "1/30",
+   "count": 0,
+   "dry": null
+  },
+  {
+   "id": 33091,
+   "name": "Bottomless milk bucket",
+   "match": "Bottomless milk bucket",
+   "wiki": "Bottomless_milk_bucket_(empty)",
+   "rate": "1/37.5",
+   "count": 1,
+   "dry": null
+  },
+  {
+   "id": 33093,
+   "name": "Cow slippers",
+   "wiki": "Cow_slippers",
+   "rate": "1/150",
+   "count": 1,
+   "dry": null
+  },
+  {
+   "id": 33124,
+   "name": "Beef",
+   "suffix": " (pet)",
+   "wiki": "Beef",
+   "rate": "1/1,000",
+   "count": 0,
+   "dry": 92.3
+  }
+ ],
+ "cas": [
+  {
+   "id": 632,
+   "tier": "Easy",
+   "name": "Brutus Novice",
+   "wiki": "Brutus_Novice",
+   "text": "Kill Brutus.",
+   "done": true
+  },
+  {
+   "id": 633,
+   "tier": "Medium",
+   "name": "Brutus Champion",
+   "wiki": "Brutus_Champion",
+   "text": "Kill Brutus 10 times.",
+   "done": true
+  },
+  {
+   "id": 635,
+   "tier": "Medium",
+   "name": "Beef vs Beef",
+   "wiki": "Beef_vs_Beef",
+   "text": "Kill him with nothing worn and nothing eaten or drunk.",
+   "how": "Drink potions before he spawns; prayers are fine. Take off the cowbell amulet too (the wiki doesn't say if it counts).",
+   "done": true
+  },
+  {
+   "id": 636,
+   "tier": "Hard",
+   "name": "Smarter than a Cow",
+   "wiki": "Smarter_than_a_Cow",
+   "text": "Kill him without any successful attack on you, even a 0.",
+   "how": "Trough safespot with the blowpipe. Move and re-safespot on *growls* or *huff*.",
+   "done": false
+  },
+  {
+   "id": 634,
+   "tier": "Elite",
+   "name": "Brutus Speed-Trialist",
+   "wiki": "Brutus_Speed-Trialist",
+   "text": "Kill him within 2 seconds of his spawn, so you need a one-hit.",
+   "how": "Dragon halberd spec (you have it). Kill him once first, then spec as he spawns. Also completes Smarter than a Cow.",
+   "done": false
+  }
+ ]
+}
+</script>
+
+<script id="main">
+(() => {
+  const WIKI = 'https://oldschool.runescape.wiki/w/';
+  const SERVER = 'host:osrs';
+  const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>';
+  let S = JSON.parse(document.getElementById('state').textContent);
+  // served by the optimizer server (localhost:3124/guides/brutus) the page calls its /tools routes; as a Claude
+  // artifact it would call the same tools through the local MCP server, once the app routes `host:` calls to pages
+  const LIVE_URL = 'http://localhost:3124/guides/brutus';
+  const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+  let mcp = null;
+  let live = isLocal;
+  let busy = false;
+  let status = { text: '', err: false };
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const clean = (s) => String(s || '').replace(/\s*\[[^\]]*\]/g, '').trim();
+  const fmtTime = (iso) => { try { return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } };
+  const SLOTS = ['head', 'cape', 'neck', 'ammo', 'weapon', 'shield', 'body', 'legs', 'hands', 'feet', 'ring'];
+  const STYLE_NAMES = { melee: 'Melee', ranged: 'Ranged', magic: 'Magic' };
+
+  const bestStyle = () => Object.entries(S.gear).filter(([, g]) => g).sort((a, b) => b[1].dps - a[1].dps)[0]?.[0];
+  const weaponLabel = (g) => (g.spell ? `${g.spell}, ${clean(g.equipment.weapon)}` : clean(g.equipment.weapon));
+
+  const render = () => {
+    const best = bestStyle();
+    const bg = S.gear[best];
+    const styleCards = ['melee', 'ranged', 'magic'].filter((k) => S.gear[k]).map((k) => {
+      const g = S.gear[k];
+      return `<div class="style${k === best ? ' best' : ''}">
+        <span class="label">${STYLE_NAMES[k]}${k === best ? ' · best' : ''}</span>
+        <span class="dps num">${g.dps.toFixed(2)}</span>
+        <span class="meta num">${esc(weaponLabel(g))} · ${g.secondsPerKill}s</span>
+        <a href="${esc(g.calcUrl)}">Open in DPS calc</a></div>`;
+    }).join('');
+    const stance = /\(([^,]+), ([^)]+)\)/.exec(bg.style || '');
+    const slotRows = SLOTS.filter((s) => bg.equipment[s]).map((s) => {
+      let v = clean(bg.equipment[s]);
+      if (s === 'weapon' && stance && !bg.spell) v += ` (${bg.style.split(' (')[0]}, ${stance[2].toLowerCase()})`;
+      if (s === 'weapon' && bg.spell) v += ` (${bg.spell})`;
+      return `<div class="slot"><span>${s}</span><span>${esc(v)}</span></div>`;
+    }).join('');
+
+    const open = S.cas.filter((c) => !c.done);
+    const tierPts = { Easy: 1, Medium: 2, Hard: 3, Elite: 4, Master: 5, Grandmaster: 6 };
+    const pts = open.reduce((n, c) => n + (tierPts[c.tier] || 0), 0);
+    const caHtml = open.length ? open.map((c) => `<div class="ca-item">
+        <div class="t"><span class="pill tier">${esc(c.tier)}</span><a href="${WIKI}${c.wiki}">${esc(c.name)}</a></div>
+        <p>${esc(c.text)}</p>${c.how ? `<p class="how">${esc(c.how)}</p>` : ''}</div>`).join('')
+      : '<p class="done-all">All Brutus Combat Achievements done.</p>';
+
+    const have = S.clog.filter((c) => c.count > 0).length;
+    const clogRows = S.clog.map((c) => {
+      const got = c.count > 0;
+      const dry = got ? '–' : (c.dry == null ? '<span class="note">not in dryness.py</span>'
+        : `${c.dry.toFixed(1)}%<span class="bar" aria-hidden="true"><i style="width:${c.dry}%"></i></span>`);
+      return `<tr><td><a href="${WIKI}${c.wiki}">${esc(c.name)}</a>${esc(c.suffix || '')}</td>
+        <td><span class="pill ${got ? 'have' : 'miss'}">${got ? 'Have' : 'Missing'}</span></td>
+        <td class="r">${esc(c.rate)}</td><td class="r">${dry}</td></tr>`;
+    }).join('');
+
+    const staleNote = S.stale && S.stale.length ? ` <span style="color:var(--bad)">· ${esc(S.stale.join(', '))} over a day old, press Export</span>` : '';
+
+    document.getElementById('app').innerHTML = `
+  <div class="top">
+    <div>
+      <div class="label">Boss guide · off task · GIM Fasd</div>
+      <h1><a href="${WIKI}Brutus" style="color:inherit;text-decoration:none">Brutus</a></h1>
+      <div class="sub">Lumbridge cow field, NE corner (instanced) · <span class="num">${S.kills}</span> kc</div>
+    </div>
+    <div class="right">
+      <div class="stats" aria-label="Boss stats">
+        <div class="stat"><span class="label">HP</span><b class="num">58</b></div>
+        <div class="stat"><span class="label">Attack</span><b>Crush</b></div>
+        <div class="stat"><span class="label">Speed</span><b class="num">5t</b></div>
+        <div class="stat"><span class="label">Max hit</span><b class="num">3 / 19</b></div>
+        <div class="stat"><span class="label">Respawn</span><b class="num">13t</b></div>
+        <div class="stat"><span class="label">Weak</span><b>Earth</b></div>
+      </div>
+      <div class="refresh">
+        <span class="status${status.err ? ' err' : ''}" role="status">${esc(status.text || `Saved ${fmtTime(S.savedAt)}`)}</span>
+        ${live ? `<button id="refreshBtn" type="button" ${busy ? 'disabled' : ''}>${busy ? 'Refreshing…' : 'Refresh all'}</button>`
+    : `<a href="${LIVE_URL}">Open live page</a>`}
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="col">
+      <section aria-labelledby="gear-h">
+        <div class="sh"><h2 id="gear-h">Gear and inventory</h2><span class="note">Piety · super combat + super ranging</span></div>
+        <div class="styles">${styleCards}</div>
+        <div>
+          <h3 style="margin-bottom:8px">${STYLE_NAMES[best]} setup</h3>
+          <div class="slots">${slotRows}</div>
+          <p class="note" style="margin-top:6px">Calc links only work while the optimizer server runs on your PC.</p>
+        </div>
+        <dl class="facts">
+          <dt>Method</dt><dd>Melee from the tile east of his spawn. He never charges into a wall from there. No cannon (too muddy).</dd>
+          <dt>Travel</dt><dd><a href="${WIKI}Cowbell_amulet">Cowbell amulet</a> <span class="pill have">you have it</span>. Its Ring option cuts respawn from 21.6s to 7.8s; keep it charged with air runes.</dd>
+          <dt>Prayers</dt><dd>Piety + Protect from Melee. Protection only blocks his basic hit; specials ignore it.</dd>
+          <dt>Inventory</dt><dd>Super combat, a few prayer potions, a little food, air runes, tinderbox (burn his oak logs between kills).</dd>
+        </dl>
+      </section>
+    </div>
+    <div class="col">
+      <section aria-labelledby="mech-h">
+        <div class="sh"><h2 id="mech-h">Mechanics</h2><span class="note">Special every 4–5 hits</span></div>
+        <div class="mech">
+          <div class="mech-item"><span class="cue">*growls*</span><p><b>Charge.</b> 4-tile dash after 3 ticks. Step to the side.</p></div>
+          <div class="mech-item"><span class="cue">*snorts*</span><p><b>Slam.</b> Hits the tiles in front 3 times after 4 ticks. Step back one tile.</p></div>
+          <div class="mech-item"><span class="cue">*huff*</span><p><b>Pathing.</b> Out of range too long, he walks around obstacles to reach you. Re-safespot.</p></div>
+        </div>
+        <p class="note">Safespot: south of the pen between the two troughs, touching the fence. Since March 2026 he stomps if you stand only one tile away.</p>
+      </section>
+      <section aria-labelledby="ca-h">
+        <div class="sh"><h2 id="ca-h">Combat Achievements</h2><span class="note">${open.length} left · ${pts} pts</span></div>
+        <div class="ca">${caHtml}</div>
+      </section>
+    </div>
+  </div>
+
+  <section aria-labelledby="triv-h">
+    <div class="sh"><h2 id="triv-h">Trivia</h2><span class="note num">${S.kills} kc from your loot tracker</span></div>
+    <div class="trivia">
+      <div>
+        <h3 style="margin-bottom:8px">Notable drops</h3>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Drop</th><th class="r">Rate</th></tr></thead>
+          <tbody>
+            <tr><td><a href="${WIKI}Mooleta">Mooleta</a></td><td class="r">1/30</td></tr>
+            <tr><td><a href="${WIKI}Bottomless_milk_bucket_(empty)">Bottomless milk bucket</a></td><td class="r">1/37.5</td></tr>
+            <tr><td>Clue scroll (beginner)</td><td class="r">1/15</td></tr>
+            <tr><td>Clue scroll (easy)</td><td class="r">1/40</td></tr>
+            <tr><td>Raw t-bone steak, bull bones</td><td class="r">always</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div>
+        <h3 style="margin-bottom:8px">Collection log · ${have} of ${S.clog.length}</h3>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Item</th><th>Status</th><th class="r">Rate</th><th class="r">Chance this dry</th></tr></thead>
+          <tbody>${clogRows}</tbody>
+        </table></div>
+        <p class="note" style="margin-top:6px">A high % means being this dry is normal at your kc.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>Data from your sync files (kills ${esc(fmtTime(S.files.killcounts))}, collection log ${esc(fmtTime(S.files.clog))})${staleNote}. Rates and mechanics from the OSRS Wiki.</footer>`;
+
+    const btn = document.getElementById('refreshBtn');
+    if (btn) btn.addEventListener('click', () => refresh(true));
+  };
+
+  const call = async (tool, args) => {
+    if (isLocal) {
+      const r = await fetch(`/tools/${tool}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(args) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      return j;
+    }
+    const r = await mcp.callTool(SERVER, tool, args, { cache: false });
+    return r.payload;
+  };
+
+  const applyStatus = (st) => {
+    S.kills = st.kills;
+    S.files = st.updated;
+    S.stale = st.stale || [];
+    for (const c of S.clog) c.count = Math.max(st.clog?.[c.id] || 0, st.drops?.[c.id] || 0);
+    for (const c of S.cas) c.done = !!st.ca?.[c.id];
+  };
+  const applyDryness = (d) => {
+    for (const c of S.clog) {
+      const hit = d.items.find((i) => i.name.toLowerCase() === (c.match || c.name).toLowerCase());
+      c.dry = hit && hit.missing && hit.kind === 'dry' ? hit.chance : null;
+    }
+  };
+
+  const regenerate = () => {
+    const title = document.querySelector('title').outerHTML;
+    const meta = document.querySelector('meta[name="claude:viewport-fit-sides"]').outerHTML;
+    const font = document.querySelector('link[rel="stylesheet"]').outerHTML;
+    const style = `<style>${document.querySelector('style:not(head style)')?.textContent || ''}</style>`;
+    const state = JSON.stringify(S, null, 1).replace(/</g, '\\u003c');
+    const main = document.getElementById('main').textContent;
+    return `${SKELETON}\n${title}\n${meta}\n${font}\n${style}\n\n<div class="wrap" id="app"></div>\n\n<script type="application/json" id="state">\n${state}\n<\/script>\n\n<script id="main">${main}<\/script>\n</body></html>`;
+  };
+
+  const refresh = async (full) => {
+    if (!live || busy) return;
+    busy = true;
+    status = { text: full ? 'Reading sync files and running the optimizer (about 30s)…' : 'Updating kc and dryness…', err: false };
+    render();
+    const errors = [];
+    try {
+      const ids = S.clog.map((c) => c.id);
+      const [st, dr] = await Promise.allSettled([
+        call('boss_status', { npc: 'Brutus', items: ids, caIds: S.cas.map((c) => c.id) }),
+        call('dryness', { filter: 'brutus' }),
+      ]);
+      if (st.status === 'rejected' && dr.status === 'rejected' && st.reason?.code === 'server_not_connected') {
+        busy = false;
+        live = false;
+        mcp = null;
+        status = { text: '', err: false };
+        render();
+        return;
+      }
+      if (st.status === 'fulfilled') applyStatus(st.value); else errors.push(`status: ${st.reason?.message || st.reason?.code}`);
+      if (dr.status === 'fulfilled') applyDryness(dr.value); else errors.push(`dryness: ${dr.reason?.message || dr.reason?.code}`);
+      if (full) {
+        try {
+          const o = await call('optimize', S.optimizer);
+          for (const k of ['melee', 'ranged', 'magic']) {
+            const r = o.results?.[k]?.[0];
+            if (r) S.gear[k] = { dps: r.dps, secondsPerKill: r.secondsPerKill, style: r.style, spell: r.spell, calcUrl: r.calcUrl, equipment: r.equipment };
+          }
+        } catch (e) { errors.push(`optimizer: ${e?.message || e?.code}`); }
+      }
+      S.savedAt = new Date().toISOString();
+      if (errors.length) status = { text: `Partly updated. ${errors.join('; ')}`, err: true };
+      else status = { text: `Updated ${fmtTime(S.savedAt)}`, err: false };
+      busy = false;
+      render();
+      if (full && !isLocal) {
+        try {
+          const art = await window.claude.use('artifact');
+          if (art) { await art.publish(regenerate()); }
+        } catch (e) {
+          if (e?.code !== 'conflict') { status = { text: `${status.text} (not saved: ${e?.code || e})`, err: true }; render(); }
+        }
+      }
+    } catch (e) {
+      busy = false;
+      status = { text: `Refresh failed: ${e?.message || e?.code || e}`, err: true };
+      render();
+    }
+  };
+
+  render();
+  if (isLocal) {
+    refresh(false);
+  } else {
+    (async () => {
+      try { mcp = await window.claude?.use('mcp'); } catch { mcp = null; }
+      if (!mcp) return;
+      live = true;
+      render();
+      refresh(false);
+    })();
+  }
+})();
+</script>
