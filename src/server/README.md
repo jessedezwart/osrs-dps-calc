@@ -58,3 +58,19 @@ damage the monster deals (`npcDps`, `avgDmgTakenPerKill`), equal-DPS alternative
 calculator with the monster selected and the setup (gear, style, spell, prayers, levels, potions and buffs) in a new
 loadout, next to your saved ones. A full search over a large bank
 takes about 5 to 20 seconds, with a thread per style.
+
+## Live refresh for Claude pages (MCP)
+
+`src/server/mcp.js` is a small stdio MCP server that lets Claude artifact pages (boss guides) refresh themselves when
+opened in the Claude desktop app. Register it once:
+
+    claude mcp add -s user osrs -- node <repo>/src/server/mcp.js
+
+A page declares `capabilities: {mcp: {servers: [{server: "host:osrs", tools: [...]}]}}` and calls
+`claude.use("mcp").callTool("host:osrs", tool, args)`. All tools are read-only:
+
+- `boss_status {npc, items, caIds}`: loot tracker kills and drops, collection log counts, completed combat achievements
+  and the sync files' export times.
+- `dryness {filter, missingOnly}`: runs `dryness.py` (`OSRS_DRYNESS`, default `~/osrs-tools/dryness.py`) and parses its
+  output into items with the % chance to be this dry or lucky.
+- `optimize {monster, version, ...}`: the same body as `POST /optimize`; starts the optimizer server if it isn't running.
