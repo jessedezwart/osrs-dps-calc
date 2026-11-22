@@ -353,7 +353,7 @@ footer{font-size:12px;color:var(--muted)}
       </div>
       <div class="refresh">
         <span class="status${status.err ? ' err' : ''}" role="status">${esc(status.text || `Saved ${fmtTime(S.savedAt)}`)}</span>
-        ${live ? `<button id="refreshBtn" type="button" ${busy ? 'disabled' : ''}>${busy ? 'Refreshing…' : 'Refresh all'}</button>`
+        ${live ? `<button id="refreshBtn" type="button" ${busy ? 'disabled' : ''}>${busy ? 'Refreshing…' : 'Rerun gear'}</button>`
     : `<a href="${LIVE_URL}">Open live page</a>`}
       </div>
     </div>
@@ -523,11 +523,9 @@ footer{font-size:12px;color:var(--muted)}
     }
   };
 
-  // the live page refreshes itself: kc, clog, dryness and CAs every 30s, gear every 30 min (only while the tab is visible)
+  // the live page refreshes kc, clog, dryness and CAs every 30s while the tab is visible; gear only reruns from the button
   const STATUS_EVERY = 30 * 1000;
-  const GEAR_EVERY = 30 * 60 * 1000;
-  const gearDue = () => !S.gearAt || Date.now() - Date.parse(S.gearAt) > GEAR_EVERY;
-  const tick = () => { if (live && !document.hidden) refresh(gearDue(), true); };
+  const tick = () => { if (live && !document.hidden) refresh(false, true); };
 
   render();
   if (isLocal) {
